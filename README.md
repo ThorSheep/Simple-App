@@ -7,7 +7,7 @@
 - 記帳：收入／支出、15 種常用分類、備註、日期、精確到分的金額與月統計。
 - 課表：星期切換、上課時段、教室、教師；同一課程多時段分筆新增。
 - 待辦：截止日期、備註、課程關聯、完成切換、逾期提示。
-- 校園公告：可選擇中大、海大的已驗證公開單位，抓取標題、日期與原文連結。
+- 校園公告：可選擇中大、海大的已驗證公開單位；支援單位全部訂閱或只訂閱公告分類，顯示分類、標題、日期與原文連結。
 - 全部資料 JSON 匯出／匯入，還原前確認、驗證與 Room 交易保護。
 - 透過 Android 系統檔案選擇器備份；公告更新需要網路權限。
 
@@ -55,6 +55,12 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 目前更新方式是手動下載 GitHub Release 的 APK 後安裝。尚無 App 內檢查更新。
 
 版本規則：`2.0.1` 為修正錯誤、`2.1.0` 為小功能更新、`3.0.0` 為大版本更新。
+
+## 手動新增或維護公告來源
+
+公告來源集中在 `app/src/main/java/tw/thorsheep/studentjournal/Data.kt` 的 `AnnouncementCatalog.sources`。每一筆都有穩定的英文 `id`、學校、單位類別、顯示名稱與公告首頁網址。一般靜態網頁先不填 `parser`，App 會尋找附有日期的公告連結。
+
+如果網站有固定分類，將分類名稱填入 `categories`，使用者就能單獨訂閱。若網站不是一般靜態頁面，請在同一筆資料指定 `AnnouncementParser`，並在 `app/src/main/java/tw/thorsheep/studentjournal/Announcements.kt` 加入對應抓取方法：`SHSD_JSON` 是公開 JSON API 範例，`CSIE_SECTIONS` 是分類 HTML 區塊範例。新增後先按「更新」確認 App 能取得標題、日期、分類與原文網址，再提供給使用者。
 
 ## 備份格式
 `app: simple-app`、`schemaVersion: 1`、`exportedAt`、`entries`。
