@@ -11,8 +11,8 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 20000
+        versionName = "2.0.0"
     }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -36,6 +36,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")
+    implementation("org.jsoup:jsoup:1.18.3")
     ksp("androidx.room:room-compiler:2.7.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
