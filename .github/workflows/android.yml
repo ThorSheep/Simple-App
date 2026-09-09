@@ -65,7 +65,7 @@ jobs:
             changes=$(git log -1 --format='- %s')
           fi
           notes=$(printf 'Simple App %s\n\n本次更新：\n%s' "$GITHUB_REF_NAME" "$changes")
-          gh release create "$GITHUB_REF_NAME" "simple-app-${GITHUB_REF_NAME}.apk" --title "Simple App ${GITHUB_REF_NAME}" --notes "$notes"
+          gh release create "$GITHUB_REF_NAME" "simple-app-${GITHUB_REF_NAME}.apk" --title "$GITHUB_REF_NAME" --notes "$notes"
       - name: Remove temporary key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"

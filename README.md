@@ -44,7 +44,7 @@ $env:GRADLE_USER_HOME = "$PWD/tools/gradle-home"
 請在首次公開發行前安全建立並備份金鑰；切勿提交金鑰、密碼或個人 JSON 備份。
 Debug 與正式版簽章不同，切換前先匯出備份，再移除 Debug 版、安裝正式版並還原。
 
-GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*` tag 在檢查通過後建置正式版並建立 Release。
+GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*` tag 在檢查通過後建置正式版並建立 Release。Release 標題使用版本號（例如 `v2.2.1`），說明使用「Simple App 版本號」與「本次更新：」的中文格式。
 需在儲存庫 Actions secrets 設定：
 - SIGNING_KEYSTORE_BASE64
 - SIGNING_STORE_PASSWORD
