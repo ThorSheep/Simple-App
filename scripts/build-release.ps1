@@ -28,8 +28,11 @@ try {
     $env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$projectDir/tools/sockets"
     & ./gradlew.bat --no-daemon assembleRelease
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
+    $gradleText = Get-Content (Join-Path $projectDir 'app/build.gradle.kts') -Raw
+    $version = [regex]::Match($gradleText, 'versionName\s*=\s*"([^"]+)"').Groups[1].Value
+    if ([string]::IsNullOrWhiteSpace($version)) { throw 'Could not read versionName from app/build.gradle.kts.' }
     New-Item -ItemType Directory -Force dist | Out-Null
-    Copy-Item app/build/outputs/apk/release/app-release.apk dist/simple-app.apk -Force
+    Copy-Item app/build/outputs/apk/release/app-release.apk (Join-Path $projectDir "dist/simple-app-$version.apk") -Force
 } finally {
     Remove-Item Env:SIGNING_STORE_PASSWORD,Env:SIGNING_KEY_PASSWORD,Env:SIGNING_STORE_FILE,Env:SIGNING_KEY_ALIAS -ErrorAction SilentlyContinue
     $generatedPassword = $null

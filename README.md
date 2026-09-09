@@ -58,7 +58,7 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 
 ## 手動新增或維護公告來源
 
-公告來源集中在 `app/src/main/java/tw/thorsheep/studentjournal/Data.kt` 的 `AnnouncementCatalog.sources`。每一筆都有穩定的英文 `id`、學校、單位類別、顯示名稱與公告首頁網址。一般靜態網頁先不填 `parser`，App 會尋找附有日期的公告連結。
+公告來源以每間學校一份 CSV 放在 `app/src/main/assets/announcements/`，例如中央大學是 `ncu.csv`。欄位為 `school,category,parent,name,url,parser,categories`；`parent` 留空代表沒有上層單位，`categories` 以 `|` 分隔。一般靜態網頁的 `parser` 填 `GENERIC`，App 會尋找附有日期的公告連結。
 
 如果網站有固定分類，將分類名稱填入 `categories`，使用者就能單獨訂閱。若網站不是一般靜態頁面，請在同一筆資料指定 `AnnouncementParser`，並在 `app/src/main/java/tw/thorsheep/studentjournal/Announcements.kt` 加入對應抓取方法：`SHSD_JSON` 是公開 JSON API 範例，`CSIE_SECTIONS` 是分類 HTML 區塊範例。新增後先按「更新」確認 App 能取得標題、日期、分類與原文網址，再提供給使用者。
 
@@ -82,7 +82,7 @@ APK 仍需在 S26 Ultra / Pixel 10 進行實機驗收。
 pwsh -File scripts/build-release.ps1
 ```
 
-正式 APK 輸出：`dist/simple-app.apk`。請使用正式版，以便後續相同簽章的 APK 覆蓋更新。
+正式 APK 輸出：`dist/simple-app-<版本號>.apk`，例如 `dist/simple-app-2.1.0.apk`。請使用正式版，以便後續相同簽章的 APK 覆蓋更新。
 **金鑰長期備份仍需由你保存到安全的位置。僅複製 DPAPI 密碼檔到另一台電腦無法解密。**
 GitHub Actions secrets 亦保存簽署所需資料，但不能作為可下載的金鑰備份。
 私人儲存庫的 Release 下載需要登入獲授權 GitHub 帳號。

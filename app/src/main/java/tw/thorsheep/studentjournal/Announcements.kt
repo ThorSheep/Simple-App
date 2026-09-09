@@ -58,6 +58,9 @@ object AnnouncementFetcher {
     }
 
     private fun categoryFrom(link: Element): String {
+        link.closest("tr")?.select("td")?.let { cells ->
+            if (cells.size >= 3) return normalized(cells[1].text())
+        }
         val container = generateSequence(link.parent()) { it.parent() }.take(5)
             .firstOrNull { it.hasAttr("data-category") || it.hasAttr("data-category-tag") } ?: return ""
         return normalized(container.attr("data-category-tag").ifBlank { container.attr("data-category") })
