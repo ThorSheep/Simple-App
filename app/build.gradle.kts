@@ -11,10 +11,11 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20300
-        versionName = "2.3.0"
+        versionCode = 30000
+        versionName = "3.0.0"
     }
     buildFeatures { compose = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     val keyPath = System.getenv("SIGNING_STORE_FILE")
@@ -34,6 +35,7 @@ android {
     }
 }
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")
@@ -45,4 +47,5 @@ dependencies {
     ksp("androidx.room:room-compiler:2.7.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }

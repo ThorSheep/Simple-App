@@ -58,14 +58,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          previous_tag=$(git tag --sort=-version:refname | grep -Fxv "$GITHUB_REF_NAME" | head -n 1 || true)
-          if [ -n "$previous_tag" ]; then
-            changes=$(git log --format='- %s' "${previous_tag}..${GITHUB_REF_NAME}" | head -n 8)
-          else
-            changes=$(git log -1 --format='- %s')
-          fi
-          notes=$(printf 'Simple App %s\n\n本次更新：\n%s' "$GITHUB_REF_NAME" "$changes")
-          gh release create "$GITHUB_REF_NAME" "simple-app-${GITHUB_REF_NAME}.apk" --title "$GITHUB_REF_NAME" --notes "$notes"
+          notes_file="docs/releases/${GITHUB_REF_NAME}.md"
+          test -s "$notes_file" || { echo "Missing release notes: $notes_file"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" "simple-app-${GITHUB_REF_NAME}.apk" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$notes_file"
       - name: Remove temporary key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"

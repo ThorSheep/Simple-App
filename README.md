@@ -1,13 +1,18 @@
 # Simple App
 
+詳細版本更新與已知限制請參閱 [CHANGELOG](CHANGELOG.md)。
+
 繁體中文 Android 原生離線 App。Kotlin、Jetpack Compose、Room，最低 Android 8.0。
 
 ## 功能
-- 首頁：今日課程、最近五筆未完成待辦、本月收支。
+- 首頁：今日課程、近期／逾期事項、本月收支、關鍵字公告；課程與事項摘要可在設定中開關。
 - 記帳：收入／支出、15 種常用分類、備註、日期、精確到分的金額與月統計。
-- 課表：星期切換、上課時段、教室、教師；同一課程多時段分筆新增。
-- 待辦：截止日期、備註、課程關聯、完成切換、逾期提示。
+- 課程：進入後預設課表，可切換課程清單；每門課可設定多個上課時段、各時段教室、教師、顏色與封存。
+- 待辦：作業、報告、考試或生活事項；截止日期／時間、報告日期／時間、分組資料、重要程度、備註、課程關聯、完成切換與篩選。
+- 行事曆／行程：七日行程合併課程、事項與手機行事曆；可自由勾選各日曆及 App 內容。僅要求 READ_CALENDAR，不寫入手機日曆。拒絕權限仍可使用 App 行程。
 - 校園公告：可選擇中大、海大的已驗證公開單位；支援單位全部訂閱或只訂閱公告分類，顯示分類、標題、日期與原文連結。
+- 公告關鍵字：使用者自訂、停用／刪除，比對標題、單位與分類，醒目顯示並可篩選；可選擇新公告通知。
+- 公告自動更新：關閉、每 6 小時、12 小時或每天；可限制不計量網路。系統可能依省電與網路狀態延後執行。首次更新建立基準，不補發舊公告。
 - 全部資料 JSON 匯出／匯入，還原前確認、驗證與 Room 交易保護。
 - 透過 Android 系統檔案選擇器備份；公告更新需要網路權限。
 
@@ -51,7 +56,7 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 - SIGNING_KEY_ALIAS
 - SIGNING_KEY_PASSWORD
 
-每次發行先提高 `app/build.gradle.kts` 的 `versionCode` 與 `versionName`，再建立相符 tag（例如 v1.0.1）。
+每次發行先提高 `app/build.gradle.kts` 的 `versionCode` 與 `versionName`，更新 `CHANGELOG.md` 的詳細紀錄，並新增 `docs/releases/v版本號.md` 作為簡短 Release 說明，再建立相符 tag（例如 v3.0.0）。發布流程會讀取該版本說明檔。
 目前更新方式是手動下載 GitHub Release 的 APK 後安裝。尚無 App 內檢查更新。
 
 版本規則：`2.0.1` 為修正錯誤、`2.1.0` 為小功能更新、`3.0.0` 為大版本更新。
@@ -70,12 +75,14 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 如果網站有固定分類，將分類名稱填入 `categories`，使用者就能單獨訂閱。若網站不是一般靜態頁面，請在同一筆資料指定 `AnnouncementParser`，並在 `app/src/main/java/tw/thorsheep/studentjournal/Announcements.kt` 加入對應抓取方法：`SHSD_JSON` 是公開 JSON API 範例，`CSIE_SECTIONS` 是分類 HTML 區塊範例。新增後先按「更新」確認 App 能取得標題、日期、分類與原文網址，再提供給使用者。
 
 ## 備份格式
-`app: simple-app`、`schemaVersion: 3`、`exportedAt`、`entries`、`subscriptions`、`quick`。公告訂閱與底部常用功能會一併備份；公告內容會在還原後重新更新。
+3.0.0 使用 `schemaVersion: 4`：`entries`（記帳）、`courses`、`meetings`、`items`、`subscriptions`、`keywords`、`options` 與 `exportedAt`。支援匯入 schema 1～3 的舊備份，舊課程與待辦會轉換並保留關聯。手機日曆事件與裝置日曆 ID 不匯出，換機後需重新勾選。公告內容會在還原後重新更新。
 金額以整數分儲存。限制 5 MB / 20,000 筆，還原完整取代現有資料。
 備份未加密。卸載 App 會刪除本機資料，請先匯出。
 
-## 第一版界線
-無登入、雲端同步、通知提醒、跨週／學期例外排課、重複待辦或自動更新。
+## 3.0.0 範圍與限制
+無登入、雲端同步、跨週／學期例外排課或重複待辦。課程以每週固定時段顯示，學期結束可封存；事項尚無到期通知。公告只比對列表欄位，不抓取公告全文。自動更新只讀取訂閱來源；失敗紀錄在設定頁顯示，下個週期再次嘗試。
+
+課程與事項使用獨立 Room 資料表；正式 2.3.0 資料庫升級時保留原有課程 ID，避免將同名不同課程誤合併。刪除課程會刪除其時段，保留事項並解除關聯。3.0.0 驗收步驟見 [docs/3.0.0-testing.md](docs/3.0.0-testing.md)。
 
 ## 本機驗證紀錄
 執行 `assembleDebug testDebugUnitTest lintDebug`；實際結果以 `app/build/reports` 為準。
