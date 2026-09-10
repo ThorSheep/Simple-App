@@ -11,8 +11,8 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20201
-        versionName = "2.2.1"
+        versionCode = 20300
+        versionName = "2.3.0"
     }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -26,6 +26,11 @@ android {
             keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
         }
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
+    }
+    buildTypes.getByName("debug") {
+        // Keep IDE builds separate from the production app: they use Android's debug key.
+        applicationIdSuffix = ".debug"
+        versionNameSuffix = "-debug"
     }
 }
 dependencies {

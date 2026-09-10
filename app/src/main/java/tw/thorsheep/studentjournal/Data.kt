@@ -84,6 +84,17 @@ interface SubscriptionDao {
 
     @Query("DELETE FROM subscriptions WHERE sourceId = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM subscriptions")
+    suspend fun clear()
+
+    @Insert
+    suspend fun insertAll(items: List<Subscription>)
+
+    @Transaction
+    suspend fun replace(items: List<Subscription>) {
+        clear(); insertAll(items)
+    }
 }
 
 @Dao
@@ -150,14 +161,24 @@ data class AnnouncementSource(
     val parent: String = ""
 )
 
-enum class AnnouncementParser { GENERIC, SHSD_JSON, CSIE_SECTIONS }
+enum class AnnouncementParser { GENERIC, SHSD_JSON, CSIE_SECTIONS, NTOU_CSIE, NTOU_LIST }
 
 object AnnouncementCatalog {
     private const val NCU_ASSET = "announcements/ncu.csv"
     private const val NTOU_ASSET = "announcements/ntou.csv"
+    private const val AVAILABLE_ASSET = "announcements/available.csv"
 
     fun sources(context: Context): List<AnnouncementSource> =
-        loadCsv(context, NCU_ASSET) + loadCsv(context, NTOU_ASSET)
+        (loadCsv(context, NCU_ASSET) + loadCsv(context, NTOU_ASSET))
+            .filter { (it.school to it.name) in loadAvailable(context) }
+
+    private fun loadAvailable(context: Context): Set<Pair<String, String>> =
+        context.assets.open(AVAILABLE_ASSET).bufferedReader().use { reader ->
+            reader.readLines().drop(1).mapNotNull { line ->
+                val fields = line.split(',').map { it.trim() }
+                if (fields.size == 2 && fields.all { it.isNotBlank() }) fields[0] to fields[1] else null
+            }.toSet()
+        }
 
     private fun loadCsv(context: Context, assetName: String): List<AnnouncementSource> =
         context.assets.open(assetName).bufferedReader().use { reader ->
@@ -345,6 +366,12 @@ object AnnouncementCatalog {
 
 object Backup {
     const val MAX_BYTES = 5 * 1024 * 1024
+    private val quickDestinations = setOf("money", "course", "task", "announcements")
+    data class Archive(
+        val entries: List<Entry>,
+        val subscriptions: List<Subscription>? = null,
+        val quick: List<String>? = null
+    )
     fun validate(e: Entry) {
         require(e.id.isNotBlank() && e.id.length <= 100) { "資料識別碼無效" }
         require(e.title.isNotBlank() && e.title.length <= 200) { "名稱不可空白或超過 200 字" }
@@ -377,8 +404,12 @@ object Backup {
         }
     }
 
-    fun encode(entries: List<Entry>): String =
-        JSONObject().put("app", "simple-app").put("schemaVersion", 2)
+    fun encode(
+        entries: List<Entry>,
+        subscriptions: List<Subscription> = emptyList(),
+        quick: List<String> = emptyList()
+    ): String =
+        JSONObject().put("app", "simple-app").put("schemaVersion", 3)
             .put("exportedAt", java.time.Instant.now().toString())
             .put("entries", JSONArray().apply {
                 entries.forEach { e ->
@@ -392,13 +423,19 @@ object Backup {
                             .put("done", e.done).put("direction", e.direction)
                     )
                 }
+            }).put("subscriptions", JSONArray().apply {
+                subscriptions.forEach { put(it.sourceId) }
+            }).put("quick", JSONArray().apply {
+                quick.forEach { put(it) }
             }).toString(2)
 
-    fun decode(raw: String): List<Entry> {
+    fun decode(raw: String): List<Entry> = decodeArchive(raw).entries
+
+    fun decodeArchive(raw: String): Archive {
         require(raw.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "備份檔不得超過 5 MB" }
         val root = JSONObject(raw)
         val version = root.getInt("schemaVersion")
-        require(root.getString("app") == "simple-app" && version in 1..2) { "不是支援的Simple App備份" }
+        require(root.getString("app") == "simple-app" && version in 1..3) { "不是支援的Simple App備份" }
         val array = root.getJSONArray("entries")
         require(array.length() <= 20000) { "備份資料過多" }
         val entries = (0 until array.length()).map { index ->
@@ -435,7 +472,19 @@ object Backup {
         require(entries.map { it.id }.distinct().size == entries.size) { "備份含重複識別碼" }
         val courses = entries.filter { it.type == "course" }.map { it.id }.toSet()
         require(entries.all { it.courseId.isEmpty() || it.courseId in courses }) { "關聯課程不存在" }
-        return entries
+        if (version < 3) return Archive(entries)
+        val subscriptions = root.getJSONArray("subscriptions").let { array ->
+            (0 until array.length()).map { Subscription(array.getString(it)) }.also { items ->
+                require(items.all { it.sourceId.isNotBlank() && it.sourceId.length <= 300 }) { "公告訂閱無效" }
+                require(items.map { it.sourceId }.distinct().size == items.size) { "備份含重複公告訂閱" }
+            }
+        }
+        val quick = root.getJSONArray("quick").let { array ->
+            (0 until array.length()).map { array.getString(it) }.also { items ->
+                require(items.size <= 4 && items.all { it in quickDestinations } && items.distinct().size == items.size) { "常用功能設定無效" }
+            }
+        }
+        return Archive(entries, subscriptions, quick)
     }
 }
 

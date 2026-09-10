@@ -14,6 +14,7 @@ object AnnouncementFetcher {
     suspend fun fetch(source: AnnouncementSource): List<Announcement> = when (source.parser) {
         AnnouncementParser.SHSD_JSON -> fetchShsd(source)
         AnnouncementParser.CSIE_SECTIONS -> fetchCsieSections(source)
+        AnnouncementParser.NTOU_CSIE, AnnouncementParser.NTOU_LIST -> fetchNtouList(source)
         AnnouncementParser.GENERIC -> fetchGeneric(source)
     }.distinctBy { it.url }.take(80)
 
@@ -40,6 +41,20 @@ object AnnouncementFetcher {
             scope.select("a.link[href]").mapNotNull { link -> announcementFromLink(source, link, category) }
         }
     }
+
+    private fun fetchNtouList(source: AnnouncementSource): List<Announcement> =
+        document(source.url).select(".d-item.d-title .mtitle").mapNotNull { row ->
+            val link = row.selectFirst("a[href]") ?: return@mapNotNull null
+            val title = normalized(link.text())
+            val href = link.absUrl("href")
+            val published = normalized(row.selectFirst(".mdate")?.text().orEmpty())
+            if (title.length !in 8..180 || href.isBlank() || !href.startsWith("https://") ||
+                !date.containsMatchIn(published) || !isAllowedSchoolUrl(href)) return@mapNotNull null
+            Announcement(
+                id = digest(source.id + href), sourceId = source.id, title = title,
+                date = normalizedDate(published), url = href, category = "重要公告"
+            )
+        }
 
     private fun fetchGeneric(source: AnnouncementSource): List<Announcement> =
         document(source.url).select("a[href]").mapNotNull { link ->

@@ -42,7 +42,7 @@ $env:GRADLE_USER_HOME = "$PWD/tools/gradle-home"
 ## 正式簽署與 GitHub 發布
 正式版固定使用 `tw.thorsheep.simpleapp` 識別碼與同一簽署金鑰。
 請在首次公開發行前安全建立並備份金鑰；切勿提交金鑰、密碼或個人 JSON 備份。
-Debug 與正式版簽章不同，切換前先匯出備份，再移除 Debug 版、安裝正式版並還原。
+Debug 與正式版簽章不同。Debug 版的識別碼為 `tw.thorsheep.simpleapp.debug`，可與正式版同時安裝；Android Studio 的 Run 會安裝 Debug 版，不會覆蓋正式版。兩個版本的本機資料彼此獨立，若需要帶入正式版資料，請在正式版匯出 JSON 後於 Debug 版匯入。
 
 GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*` tag 在檢查通過後建置正式版並建立 Release。Release 標題使用版本號（例如 `v2.2.1`），說明使用「Simple App 版本號」與「本次更新：」的中文格式。
 需在儲存庫 Actions secrets 設定：
@@ -60,10 +60,17 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 
 公告來源以每間學校一份 CSV 放在 `app/src/main/assets/announcements/`，例如中央大學是 `ncu.csv`。欄位為 `school,category,parent,name,url,parser,categories`；`parent` 留空代表沒有上層單位，`categories` 以 `|` 分隔。一般靜態網頁的 `parser` 填 `GENERIC`，App 會尋找附有日期的公告連結。
 
+`available.csv` 是已驗證可連線的來源清單；App 只顯示清單內的單位。原始 `ncu.csv` 與 `ntou.csv` 會保留所有單位與網址，待網址或解析方式修正後，再將對應的學校與單位名稱加入 `available.csv`。
+
+## 已知公告來源問題
+
+- `available.csv` 以外的 NCU 與 NTOU 單位目前因網址失效、連線逾時、TLS 問題或公告頁結構不相容而暫時隱藏；原始資料保留在各校 CSV，待有使用需求時再逐一確認現行網址與解析方式。
+- 海大資訊工程學系與食品科學系使用 `NTOU_CSIE`／`NTOU_LIST` 列表解析器，讀取公告列表的標題與日期；若校方變更列表 HTML 結構，需重新調整選擇器。
+
 如果網站有固定分類，將分類名稱填入 `categories`，使用者就能單獨訂閱。若網站不是一般靜態頁面，請在同一筆資料指定 `AnnouncementParser`，並在 `app/src/main/java/tw/thorsheep/studentjournal/Announcements.kt` 加入對應抓取方法：`SHSD_JSON` 是公開 JSON API 範例，`CSIE_SECTIONS` 是分類 HTML 區塊範例。新增後先按「更新」確認 App 能取得標題、日期、分類與原文網址，再提供給使用者。
 
 ## 備份格式
-`app: simple-app`、`schemaVersion: 1`、`exportedAt`、`entries`。
+`app: simple-app`、`schemaVersion: 3`、`exportedAt`、`entries`、`subscriptions`、`quick`。公告訂閱與底部常用功能會一併備份；公告內容會在還原後重新更新。
 金額以整數分儲存。限制 5 MB / 20,000 筆，還原完整取代現有資料。
 備份未加密。卸載 App 會刪除本機資料，請先匯出。
 
