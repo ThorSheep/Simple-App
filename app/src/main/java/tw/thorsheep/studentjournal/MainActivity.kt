@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,14 +41,18 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 
-class MainActivity : ComponentActivity() { override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); enableEdgeToEdge(); setContent { AppTheme { JournalV3() } } } }
+class MainActivity : ComponentActivity() { override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); enableEdgeToEdge(); setContent { var theme by remember { mutableStateOf(AppOptions.read(this).theme) }; AppTheme(theme) { JournalV3 { theme = it } } } } }
 
 @Composable fun MoneyScreen(rows: List<Entry>, month: String, setMonth: (String)->Unit, edit: (Entry)->Unit, delete: (Entry)->Unit) = Money(rows, month, setMonth, edit, delete)
 @Composable fun MoneyEditor(old: Entry, dismiss: ()->Unit, save: (Entry)->Unit) = Editor(old, emptyList(), dismiss, save)
 @Composable fun SourceSelector(sources: List<AnnouncementSource>, subscribed: List<String>, add: (AnnouncementSource)->Unit) = AnnouncementSelector(sources, subscribed, add)
 @Composable fun PickDate(value: String, label: String, set: (String)->Unit) = DateButton(value, label, set)
 @Composable fun PickTime(label: String, value: String, set: (String)->Unit) = TimeButton(label, value, set)
-@Composable private fun AppTheme(content: @Composable () -> Unit)=MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF356B58),secondary=Color(0xFF9B6C3C),background=Color(0xFFF6F8F3),surface=Color(0xFFF6F8F3),primaryContainer=Color(0xFFD8EBDC)),content=content)
+@Composable private fun AppTheme(theme: String, content: @Composable () -> Unit) {
+    val dark = when (theme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
+    val colors = if (dark) darkColorScheme(primary=Color(0xFF9ACDB4), secondary=Color(0xFFE9B98A), background=Color(0xFF101512), surface=Color(0xFF101512), primaryContainer=Color(0xFF254B3A)) else lightColorScheme(primary=Color(0xFF356B58), secondary=Color(0xFF9B6C3C), background=Color(0xFFF6F8F3), surface=Color(0xFFF6F8F3), primaryContainer=Color(0xFFD8EBDC))
+    MaterialTheme(colorScheme = colors, content = content)
+}
 private fun money(c:Long)="NT$ "+"%,.2f".format(java.util.Locale.US,c/100.0)
 private val weekdays=listOf("一","二","三","四","五","六","日")
 private val categories=listOf("早餐","午餐","晚餐","飲品","點心","酒類","交通","購物","娛樂","日用品","房租","醫療","社交","禮物","數位")

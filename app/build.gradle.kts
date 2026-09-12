@@ -11,10 +11,10 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30000
-        versionName = "3.0.0"
+        versionCode = 30100
+        versionName = "3.1.0"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

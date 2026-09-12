@@ -47,20 +47,26 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable fun SettingsV3(options: AppOptions, keywords: List<AnnouncementKeyword>, save: (AppOptions) -> Unit, setNotify: (Boolean) -> Unit,
-    saveKeyword: (AnnouncementKeyword) -> Unit, deleteKeyword: (AnnouncementKeyword) -> Unit, export: () -> Unit, import: () -> Unit) {
+@Composable fun SettingsV3(options: AppOptions, keywords: List<AnnouncementKeyword>, update: UpdateState, save: (AppOptions) -> Unit, setNotify: (Boolean) -> Unit,
+    saveKeyword: (AnnouncementKeyword) -> Unit, deleteKeyword: (AnnouncementKeyword) -> Unit, export: () -> Unit, import: () -> Unit,
+    checkUpdate: () -> Unit, downloadUpdate: (AppRelease) -> Unit, installUpdate: (AppRelease, java.io.File) -> Unit) {
     val context = LocalContext.current
     var word by rememberSaveable { mutableStateOf("") }; var wordError by remember { mutableStateOf("") }
     val state = remember { context.getSharedPreferences("announcement-state", 0) }
     var revision by remember { mutableIntStateOf(0) }
     DisposableEffect(state) { val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> revision++ }; state.registerOnSharedPreferenceChangeListener(listener); onDispose { state.unregisterOnSharedPreferenceChangeListener(listener) } }
     PageList {
-        item { SectionTitle("底部常用功能"); Text("首頁固定顯示，其餘最多四項。") }
+        item { SectionTitle("底部常用功能"); Text("可自由選擇、排序與設定首頁位置，最多四項。") }
         items(listOf("money" to "記帳", "course" to "課程", "task" to "待辦", "agenda" to "行事曆／行程", "announcements" to "公告")) { (id, name) ->
-            ToggleRow(name, id in options.quick) { checked -> if (!checked) save(options.copy(quick = options.quick - id)) else if (options.quick.size < 4) save(options.copy(quick = options.quick + id)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Box(Modifier.weight(1f)) { ToggleRow(name, id in options.quick) { checked -> if (!checked) save(options.copy(quick = options.quick - id, homePosition = options.homePosition.coerceIn(0, (options.quick - id).size))) else if (options.quick.size < 4) save(options.copy(quick = options.quick + id)) } }; val index = options.quick.indexOf(id); if (index >= 0) { TextButton({ save(options.copy(quick = options.quick.move(index, index - 1))) }, enabled = index > 0) { Text("↑") }; TextButton({ save(options.copy(quick = options.quick.move(index, index + 1))) }, enabled = index < options.quick.lastIndex) { Text("↓") } } }
         }
         if (options.quick.size == 4) item { Text("已選四項；請先取消一項再加入其他功能。") }
-        item { SectionTitle("首頁內容"); ToggleRow("顯示今日課程", options.showCourses) { save(options.copy(showCourses = it)) }; ToggleRow("顯示近期事項", options.showTasks) { save(options.copy(showTasks = it)) } }
+        item { Choice("首頁在底部的位置", options.homePosition.toString(), (0..options.quick.size).map { it.toString() to "第 ${it + 1} 個" }) { save(options.copy(homePosition = it.toInt())) }; ToggleRow("左右滑動切換底部功能", options.swipeNavigation) { save(options.copy(swipeNavigation = it)) }; Text("左右滑動只在已選擇的底部功能間切換，邊緣保留給 Android 系統返回手勢。") }
+        item { SectionTitle("首頁內容"); Text("可開關並調整各區塊順序。") }
+        items(listOf("money" to "本月生活收支", "course" to "今日課程", "task" to "近期事項", "agenda" to "行事曆／行程入口", "announcements" to "校園公告")) { (id, name) ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Box(Modifier.weight(1f)) { ToggleRow(name, id in options.homeSections) { checked -> if (checked) save(options.copy(homeSections = options.homeSections + id)) else save(options.copy(homeSections = options.homeSections - id)) } }; val index = options.homeSections.indexOf(id); if (index >= 0) { TextButton({ save(options.copy(homeSections = options.homeSections.move(index, index - 1))) }, enabled = index > 0) { Text("↑") }; TextButton({ save(options.copy(homeSections = options.homeSections.move(index, index + 1))) }, enabled = index < options.homeSections.lastIndex) { Text("↓") } } }
+        }
+        item { SectionTitle("外觀"); Choice("主題", options.theme, listOf("system" to "跟隨系統", "light" to "淺色", "dark" to "深色")) { save(options.copy(theme = it)) } }
         item { SectionTitle("公告自動更新"); Choice("更新頻率", options.intervalHours.toString(), listOf("0" to "關閉（僅手動）", "6" to "每 6 小時", "12" to "每 12 小時", "24" to "每天一次")) { save(options.copy(intervalHours = it.toInt())) }
             ToggleRow("僅使用 Wi-Fi／不計量網路自動更新", options.wifiOnly) { save(options.copy(wifiOnly = it)) }
             Text("背景更新只抓取已訂閱單位；實際時間可能因系統省電與網路狀態延後。")
@@ -75,7 +81,22 @@ import java.time.format.DateTimeFormatter
         }
         items(keywords, key = { it.id }) { keyword -> Row { Box(Modifier.weight(1f)) { ToggleRow(keyword.text, keyword.enabled) { saveKeyword(keyword.copy(enabled = it)) } }; TextButton({ deleteKeyword(keyword) }) { Text("刪除") } } }
         item { ToggleRow("命中關鍵字的新公告發送通知", options.notify, setNotify); Text("每個單位首次更新只建立現有公告紀錄，不補發舊公告。手動與自動更新皆會檢測；同一公告不重複通知。") }
+        item { SectionTitle("App 版本更新"); ToggleRow("啟動時自動檢查新版本", options.checkAppUpdates) { save(options.copy(checkAppUpdates = it)) }
+            when (update) {
+                UpdateState.Idle -> TextButton(checkUpdate) { Text("檢查新版本") }
+                UpdateState.Checking -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                UpdateState.Current -> Text("目前已是最新版本。", color = MaterialTheme.colorScheme.primary)
+                is UpdateState.Available -> { Text("可更新至 ${update.release.tag}", fontWeight = FontWeight.Bold); if (update.release.notes.isNotBlank()) Text(update.release.notes.lineSequence().take(3).joinToString("\n")); Button({ downloadUpdate(update.release) }) { Text("下載並更新") } }
+                is UpdateState.Downloading -> { Text("正在下載 ${update.release.tag}…"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                is UpdateState.Ready -> { Text("${update.release.tag} 已下載完成。"); Button({ installUpdate(update.release, update.file) }) { Text("安裝已下載版本") } }
+                is UpdateState.Failed -> { Text("檢查或下載失敗：${update.message}", color = MaterialTheme.colorScheme.error); TextButton(checkUpdate) { Text("重新檢查") } }
+                UpdateState.Unsupported -> Text("Android Studio 的 debug 測試版與正式 APK 簽章不同，請安裝正式版後使用 App 內更新。")
+            }
+            Text("更新僅從 GitHub Release 下載正式 APK。安裝前 Android 會驗證簽章並要求你確認；若系統尚未允許此 App 安裝更新，會先開啟系統設定。")
+        }
         item { SectionTitle("資料備份"); Button(export, Modifier.fillMaxWidth()) { Text("匯出資料與設定") }; OutlinedButton(import, Modifier.fillMaxWidth()) { Text("選擇備份檔還原") }; Text("備份包含記帳、課程、事項、訂閱、關鍵字與 App 設定。手機行事曆事件與日曆選擇僅留在本機，換機後需重新選擇。") }
-        item { Text("Simple App 3.0.0", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Simple App 3.1.0", style = MaterialTheme.typography.bodySmall) }
     }
 }
+
+private fun <T> List<T>.move(from: Int, to: Int): List<T> = to.coerceIn(indices).let { destination -> toMutableList().also { value -> value.add(destination, value.removeAt(from)) } }

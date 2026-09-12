@@ -13,6 +13,7 @@ import android.provider.CalendarContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +41,7 @@ private val pagesV3 = linkedMapOf("home" to "首頁", "money" to "記帳", "cour
 private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.AccountBalanceWallet; "course" -> Icons.Outlined.School; "task" -> Icons.Outlined.CheckCircle; "agenda" -> Icons.Outlined.DateRange; "announcements" -> Icons.Outlined.Campaign; "settings" -> Icons.Outlined.Settings; else -> Icons.Outlined.Home }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun JournalV3() {
+@Composable fun JournalV3(onThemeChanged: (String) -> Unit) {
     val context = LocalContext.current
     val db = remember { JournalDb.get(context) }
     val courses by db.academic().courses().collectAsStateWithLifecycle(emptyList())
@@ -63,11 +65,12 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var moneyEdit by remember { mutableStateOf<Entry?>(null) }
     var deletion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var archive by remember { mutableStateOf<ArchiveV4?>(null) }
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message ?: "操作失敗") } finally { busy = false } } }
-    fun saveOptions(value: AppOptions) { options = value; value.persist(context) }
+    fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
-    LaunchedEffect(Unit) { AppOptions.schedule(context) }
+    LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> if (uri != null) work {
         withContext(Dispatchers.IO) { val raw = BackupV4.encode(BackupV4.snapshot(context)); (context.contentResolver.openOutputStream(uri, "wt") ?: error("無法開啟備份檔")).bufferedWriter().use { it.write(raw) } }; message("備份已匯出")
     } }
@@ -80,17 +83,19 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     } }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     ModalNavigationDrawer(drawerState = drawer, drawerContent = { ModalDrawerSheet {
-        Text("Simple App 3.0.0", Modifier.padding(24.dp), style = MaterialTheme.typography.titleLarge)
+        Text("Simple App 3.1.0", Modifier.padding(24.dp), style = MaterialTheme.typography.titleLarge)
         pagesV3.forEach { (id, title) -> NavigationDrawerItem(label = { Text(title) }, selected = page == id, onClick = { page = id; scope.launch { drawer.close() } }, icon = { Icon(pageIcon(id), null) }) }
     } }) {
         Scaffold(snackbarHost = { SnackbarHost(snack) }, topBar = { TopAppBar(title = { Text(pagesV3[page] ?: "首頁") }, navigationIcon = { IconButton({ scope.launch { drawer.open() } }) { Icon(Icons.Outlined.Menu, "開啟選單") } }) },
             bottomBar = { if (page != "settings") NavigationBar {
                 val quick = options.quick.filter { it in pagesV3 }.take(4)
-                (quick.take(2) + "home" + quick.drop(2)).forEach { id -> NavigationBarItem(selected = page == id, onClick = { page = id }, icon = { Icon(pageIcon(id), null) }, label = { Text(pagesV3[id] ?: id) }) }
+                quick.toMutableList().also { it.add(options.homePosition.coerceIn(0, quick.size), "home") }.forEach { id -> NavigationBarItem(selected = page == id, onClick = { page = id }, icon = { Icon(pageIcon(id), null) }, label = { Text(pagesV3[id] ?: id) }) }
             } }, floatingActionButton = { if (page in listOf("course", "task", "money")) FloatingActionButton(onClick = {
                 when (page) { "course" -> courseEdit = Course(title = ""); "task" -> itemEdit = AcademicItem(title = ""); "money" -> moneyEdit = Entry(type = "money", title = "", date = LocalDate.now().toString()) }
             }) { Icon(Icons.Outlined.Add, "新增") } }) { padding ->
-            Box(Modifier.padding(padding)) {
+            val swipePages = options.quick.filter { it in pagesV3 }.toMutableList().also { it.add(options.homePosition.coerceIn(0, options.quick.size), "home") }
+            var drag by remember(page, swipePages, options.swipeNavigation) { mutableFloatStateOf(0f) }
+            Box(Modifier.padding(padding).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
                 when (page) {
                     "home" -> HomeV3(money, courses, meetings, tasks, visibleNews, keywords, sources, options) { page = it }
                     "money" -> MoneyScreen(money, month, { month = it }, { moneyEdit = it }, { deletion = "money" to it.id })
@@ -98,10 +103,10 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                     "task" -> TaskPage(courses, tasks, { itemEdit = it }, { item, done -> work { db.academic().saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "agenda" -> AgendaPage(courses, meetings, tasks)
                     "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, { id, enabled -> work { if (enabled) db.subscriptions().save(Subscription(id)) else db.subscriptions().delete(id) } }, { source -> work { db.subscriptions().delete(source.id); source.categories.forEach { db.subscriptions().delete("${source.id}#$it") } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, { page = "settings" })
-                    else -> SettingsV3(options, keywords, ::saveOptions, { enabled ->
+                    else -> SettingsV3(options, keywords, updateState, ::saveOptions, { enabled ->
                         if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         else saveOptions(options.copy(notify = enabled))
-                    }, { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; db.automation().save(word) } }, { word -> work { db.automation().delete(word.id) } }, { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, { import.launch(arrayOf("application/json", "text/plain")) })
+                    }, { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; db.automation().save(word) } }, { word -> work { db.automation().delete(word.id) } }, { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, { import.launch(arrayOf("application/json", "text/plain")) }, { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } }, { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } }, { release, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") })
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
@@ -117,25 +122,25 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
 @Composable private fun HomeV3(money: List<Entry>, courses: List<Course>, meetings: List<CourseMeeting>, tasks: List<AcademicItem>, news: List<Announcement>, keywords: List<AnnouncementKeyword>, sources: List<AnnouncementSource>, options: AppOptions, go: (String) -> Unit) = PageList {
     val today = LocalDate.now()
     item { SectionTitle("${today.monthValue} 月 ${today.dayOfMonth} 日 · 星期${weekNames[today.dayOfWeek.value - 1]}") }
-    item { Card(Modifier.fillMaxWidth().clickable { go("money") }) { Column(Modifier.padding(18.dp)) { Text("本月生活收支"); val balance = money.filter { it.date.startsWith(YearMonth.now().toString()) }.sumOf { if (it.direction == "收入") it.cents else -it.cents }; Text("NT$ ${java.math.BigDecimal.valueOf(balance, 2).toPlainString()}", style = MaterialTheme.typography.headlineMedium) } } }
-    if (options.showCourses) {
-        item { TextButton({ go("course") }) { SectionTitle("今日課程 ›") } }
-        val events = localAgenda(courses, meetings, emptyList(), today, today)
-        if (events.isEmpty()) item { Text("今日無課程") }
-        items(events, key = { it.key }) { e -> Card(Modifier.fillMaxWidth().clickable { go("course") }) { Column(Modifier.padding(16.dp)) { Text(e.title, fontWeight = FontWeight.Bold); Text(e.detail) } } }
-    }
-    if (options.showTasks) {
-        item { TextButton({ go("task") }) { SectionTitle("近期事項 ›") } }
-        val events = localAgenda(emptyList(), emptyList(), tasks, today.minusYears(10), today.plusDays(30)).take(8)
-        if (events.isEmpty()) item { Text("近期沒有已排定事項") }
-        items(events, key = { it.key }) { e -> Text("${e.date} ${e.time} · ${e.title}${if (e.date < today) "（逾期）" else ""}", Modifier.fillMaxWidth().clickable { go("task") }.padding(8.dp)) }
-    }
-    item { TextButton({ go("agenda") }) { Text("查看完整行程與手機行事曆") } }
-    item { TextButton({ go("announcements") }) { SectionTitle("校園公告 ›") } }
-    if (news.isEmpty()) item { Text("尚無公告，請訂閱單位並更新。") }
-    items(news.sortedByDescending { keywordMatches(it, sources.find { s -> s.id == it.sourceId }, keywords).isNotEmpty() }.take(6), key = { it.id }) { a -> val hit = keywordMatches(a, sources.find { it.id == a.sourceId }, keywords)
-        Text("${if (hit.isEmpty()) "" else "★ "}${a.title}\n${a.date}", Modifier.fillMaxWidth().clickable { go("announcements") }.padding(8.dp), color = if (hit.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary)
-    }
+    options.homeSections.forEach { section -> when (section) {
+        "money" -> item { Card(Modifier.fillMaxWidth().clickable { go("money") }) { Column(Modifier.padding(18.dp)) { Text("本月生活收支"); val balance = money.filter { it.date.startsWith(YearMonth.now().toString()) }.sumOf { if (it.direction == "收入") it.cents else -it.cents }; Text("NT$ ${java.math.BigDecimal.valueOf(balance, 2).toPlainString()}", style = MaterialTheme.typography.headlineMedium) } } }
+        "course" -> {
+            item { TextButton({ go("course") }) { SectionTitle("今日課程 ›") } }
+            val events = localAgenda(courses, meetings, emptyList(), today, today)
+            if (events.isEmpty()) item { Text("今日無課程") } else items(events, key = { it.key }) { e -> Card(Modifier.fillMaxWidth().clickable { go("course") }) { Column(Modifier.padding(16.dp)) { Text(e.title, fontWeight = FontWeight.Bold); Text(e.detail) } } }
+        }
+        "task" -> {
+            item { TextButton({ go("task") }) { SectionTitle("近期事項 ›") } }
+            val events = localAgenda(emptyList(), emptyList(), tasks, today.minusYears(10), today.plusDays(30)).take(8)
+            if (events.isEmpty()) item { Text("近期沒有已排定事項") } else items(events, key = { it.key }) { e -> Text("${e.date} ${e.time} · ${e.title}${if (e.date < today) "（逾期）" else ""}", Modifier.fillMaxWidth().clickable { go("task") }.padding(8.dp)) }
+        }
+        "agenda" -> item { Card(Modifier.fillMaxWidth().clickable { go("agenda") }) { Column(Modifier.padding(16.dp)) { Text("行事曆／行程", fontWeight = FontWeight.Bold); Text("查看 App 課程、事項與已選擇的手機行事曆。") } } }
+        "announcements" -> {
+            item { TextButton({ go("announcements") }) { SectionTitle("校園公告 ›") } }
+            if (news.isEmpty()) item { Text("尚無公告，請訂閱單位並更新。") } else items(news.sortedByDescending { keywordMatches(it, sources.find { s -> s.id == it.sourceId }, keywords).isNotEmpty() }.take(6), key = { it.id }) { a -> val hit = keywordMatches(a, sources.find { it.id == a.sourceId }, keywords); Text("${if (hit.isEmpty()) "" else "★ "}${a.title}\n${a.date}", Modifier.fillMaxWidth().clickable { go("announcements") }.padding(8.dp), color = if (hit.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary) }
+        }
+    } }
+    if (options.homeSections.isEmpty()) item { Text("首頁目前沒有顯示項目，可到設定加入。") }
 }
 
 @Composable private fun AgendaPage(courses: List<Course>, meetings: List<CourseMeeting>, tasks: List<AcademicItem>) {
