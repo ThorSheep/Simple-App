@@ -66,6 +66,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var deletion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var archive by remember { mutableStateOf<ArchiveV4?>(null) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message ?: "操作失敗") } finally { busy = false } } }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
@@ -102,11 +103,18 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                     "course" -> CoursePage(courses, meetings, tasks, { courseEdit = it }, { deletion = "course" to it.id }, { itemEdit = AcademicItem(title = "", courseId = it) }, { itemEdit = it }, { item, done -> work { db.academic().saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "task" -> TaskPage(courses, tasks, { itemEdit = it }, { item, done -> work { db.academic().saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "agenda" -> AgendaPage(courses, meetings, tasks)
-                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, { id, enabled -> work { if (enabled) db.subscriptions().save(Subscription(id)) else db.subscriptions().delete(id) } }, { source -> work { db.subscriptions().delete(source.id); source.categories.forEach { db.subscriptions().delete("${source.id}#$it") } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, { page = "settings" })
-                    else -> SettingsV3(options, keywords, updateState, ::saveOptions, { enabled ->
-                        if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        else saveOptions(options.copy(notify = enabled))
-                    }, { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; db.automation().save(word) } }, { word -> work { db.automation().delete(word.id) } }, { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, { import.launch(arrayOf("application/json", "text/plain")) }, { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } }, { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } }, { release, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") })
+                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, { id, enabled -> work { if (enabled) db.subscriptions().save(Subscription(id)) else db.subscriptions().delete(id) } }, { source -> work { db.subscriptions().delete(source.id); source.categories.forEach { db.subscriptions().delete("${source.id}#$it") } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, { settingsSection = "announcements"; page = "settings" })
+                    else -> SettingsV3(
+                        options = options, keywords = keywords, update = updateState, save = ::saveOptions,
+                        setNotify = { enabled -> if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS) else saveOptions(options.copy(notify = enabled)) },
+                        saveKeyword = { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; db.automation().save(word) } },
+                        deleteKeyword = { word -> work { db.automation().delete(word.id) } },
+                        export = { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, import = { import.launch(arrayOf("application/json", "text/plain")) },
+                        checkUpdate = { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } },
+                        downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
+                        installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
+                        selectedSection = settingsSection, selectSection = { settingsSection = it }
+                    )
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
