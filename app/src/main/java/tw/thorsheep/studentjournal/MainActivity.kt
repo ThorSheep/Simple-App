@@ -55,10 +55,36 @@ class MainActivity : ComponentActivity() { override fun onCreate(savedInstanceSt
 }
 private fun money(c:Long)="NT$ "+"%,.2f".format(java.util.Locale.US,c/100.0)
 private val weekdays=listOf("一","二","三","四","五","六","日")
-private val categories=listOf("早餐","午餐","晚餐","飲品","點心","酒類","交通","購物","娛樂","日用品","房租","醫療","社交","禮物","數位")
+private val categories=listOf("早餐","午餐","晚餐","飲品","點心","酒類","交通","購物","娛樂","日用品","房租","醫療","社交","禮物","數位","其他")
 
 @Composable private fun ListScreen(content:LazyListScope.()->Unit)=LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp,12.dp,20.dp,96.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
-@Composable private fun Money(rows:List<Entry>,month:String,setMonth:(String)->Unit,edit:(Entry)->Unit,delete:(Entry)->Unit)=ListScreen{item{Row(Modifier.fillMaxWidth(),Arrangement.SpaceBetween,Alignment.CenterVertically){TextButton({setMonth(YearMonth.parse(month).minusMonths(1).toString())}){Text("上個月")};Text(month,style=MaterialTheme.typography.titleLarge);TextButton({setMonth(YearMonth.parse(month).plusMonths(1).toString())}){Text("下個月")}}};val list=rows.filter{it.type=="money"&&it.date.startsWith(month)}.sortedByDescending{it.date};item{Text("收入 ${money(list.filter{it.direction=="收入"}.sumOf{it.cents})}　支出 ${money(list.filter{it.direction=="支出"}.sumOf{it.cents})}")};if(list.isEmpty())item{Empty("這個月還沒有紀錄","點右下角 ＋ 記下第一筆收支。")}else items(list){EntryCard(it,rows,{edit(it)},{delete(it)})}}
+@Composable private fun Money(rows:List<Entry>,month:String,setMonth:(String)->Unit,edit:(Entry)->Unit,delete:(Entry)->Unit)=ListScreen{
+    item { Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) { TextButton({ setMonth(YearMonth.parse(month).minusMonths(1).toString()) }) { Text("上個月") }; Text(month, style=MaterialTheme.typography.titleLarge); TextButton({ setMonth(YearMonth.parse(month).plusMonths(1).toString()) }) { Text("下個月") } } }
+    val list=rows.filter{it.type=="money"&&it.date.startsWith(month)}.sortedByDescending{it.date}
+    item { Text("收入 ${money(list.filter{it.direction=="收入"}.sumOf{it.cents})}　支出 ${money(list.filter{it.direction=="支出"}.sumOf{it.cents})}") }
+    val days=list.groupBy{it.date}.toList().sortedByDescending{it.first}
+    if(days.isEmpty()) item { Empty("這個月還沒有紀錄","點右下角 ＋ 記下第一筆收支。") }
+    else items(days, key={it.first}) { (date, entries) -> MoneyDay(date, entries, edit, delete) }
+}
+@Composable private fun MoneyDay(date:String,entries:List<Entry>,edit:(Entry)->Unit,delete:(Entry)->Unit) {
+    val weekday=runCatching { "星期${weekdays[LocalDate.parse(date).dayOfWeek.value-1]}" }.getOrDefault("")
+    val total=entries.sumOf { if(it.direction=="收入") it.cents else -it.cents }
+    Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp)) { Column {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
+            Text(listOf(date, weekday).filter{it.isNotBlank()}.joinToString("　"), fontWeight=FontWeight.Bold, style=MaterialTheme.typography.titleMedium)
+            Text((if(total>=0) "+ " else "− ")+money(kotlin.math.abs(total)), fontWeight=FontWeight.Bold, color=if(total>=0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        }
+        HorizontalDivider()
+        entries.forEachIndexed { index, entry ->
+            Row(Modifier.fillMaxWidth().clickable { edit(entry) }.padding(horizontal=16.dp, vertical=12.dp), verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text(entry.note.ifBlank { entry.category.ifBlank { "其他" } }, fontWeight=FontWeight.SemiBold); if(entry.note.isNotBlank() && entry.category.isNotBlank()) Text(entry.category, style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text((if(entry.direction=="收入") "+ " else "− ")+money(entry.cents), fontWeight=FontWeight.Bold, color=if(entry.direction=="收入") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                IconButton({ delete(entry) }) { Icon(Icons.Outlined.Delete, "刪除") }
+            }
+            if(index<entries.lastIndex) HorizontalDivider(Modifier.padding(horizontal=16.dp))
+        }
+    } }
+}
 @Composable private fun AnnouncementSelector(sources:List<AnnouncementSource>,subscribed:List<String>,add:(AnnouncementSource)->Unit){var school by rememberSaveable{mutableStateOf("")};var group by rememberSaveable{mutableStateOf("")};var schoolOpen by remember{mutableStateOf(false)};var groupOpen by remember{mutableStateOf(false)};var unitOpen by remember{mutableStateOf(false)};val schools=sources.map{it.school}.distinct();val groups=sources.filter{it.school==school}.map{it.group}.distinct();val available=sources.filter{it.school==school&&it.group==group&&it.id !in subscribed&&!subscribed.any{id->id.startsWith("${it.id}#")}};Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Box{OutlinedButton({schoolOpen=true},Modifier.fillMaxWidth()){Text(school.ifBlank{"選擇學校"})};DropdownMenu(schoolOpen,{schoolOpen=false}){schools.forEach{option->DropdownMenuItem({Text(option)},{school=option;group="";schoolOpen=false})}}};if(school.isNotBlank())Box{OutlinedButton({groupOpen=true},Modifier.fillMaxWidth()){Text(group.ifBlank{"選擇全校公告、行政或教學單位"})};DropdownMenu(groupOpen,{groupOpen=false}){groups.forEach{option->DropdownMenuItem({Text(option)},{group=option;groupOpen=false})}}};if(group.isNotBlank())Box{OutlinedButton({unitOpen=true},Modifier.fillMaxWidth()){Text("新增單位")};DropdownMenu(unitOpen,{unitOpen=false}){if(available.isEmpty())DropdownMenuItem({Text("此類別已全部訂閱")},{},enabled=false)else available.forEach{s->DropdownMenuItem({Text(listOf(s.parent,s.name).filter{it.isNotBlank()}.joinToString("／"))},{add(s);unitOpen=false})}}}}}
 @Composable private fun Heading(text:String)=Text(text,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
 @Composable private fun Empty(title:String,detail:String)=Column(Modifier.padding(vertical=20.dp)){Text(title,style=MaterialTheme.typography.titleMedium);Text(detail,color=MaterialTheme.colorScheme.onSurfaceVariant)}
