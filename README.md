@@ -5,7 +5,7 @@
 繁體中文 Android 原生離線 App。Kotlin、Jetpack Compose、Room，最低 Android 8.0。
 
 ## 功能
-- 首頁：今日課程、近期／逾期事項、本月收支、關鍵字公告；課程與事項摘要可在設定中開關。
+- 首頁：本月收支、今日課程、近期／逾期事項、行事曆入口與關鍵字公告；各區塊可獨立開關和排序。
 - 記帳：收入／支出、15 種常用分類、備註、日期、精確到分的金額與月統計。
 - 課程：進入後預設課表，可切換課程清單；每門課可設定多個上課時段、各時段教室、教師、顏色與封存。
 - 待辦：作業、報告、考試或生活事項；截止日期／時間、報告日期／時間、分組資料、重要程度、備註、課程關聯、完成切換與篩選。
@@ -13,6 +13,8 @@
 - 校園公告：可選擇中大、海大的已驗證公開單位；支援單位全部訂閱或只訂閱公告分類，顯示分類、標題、日期與原文連結。
 - 公告關鍵字：使用者自訂、停用／刪除，比對標題、單位與分類，醒目顯示並可篩選；可選擇新公告通知。
 - 公告自動更新：關閉、每 6 小時、12 小時或每天；可限制不計量網路。系統可能依省電與網路狀態延後執行。首次更新建立基準，不補發舊公告。
+- 介面設定：底部常用功能可選擇、排序及設定首頁位置；可選左右滑動切換、跟隨系統、淺色或深色主題。
+- App 更新：正式版可自動或手動檢查 GitHub Release，下載後由 Android 系統驗證簽章及確認安裝；Android Studio debug 版不支援 App 內更新。
 - 全部資料 JSON 匯出／匯入，還原前確認、驗證與 Room 交易保護。
 - 透過 Android 系統檔案選擇器備份；公告更新需要網路權限。
 
@@ -57,7 +59,7 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 - SIGNING_KEY_PASSWORD
 
 每次發行先提高 `app/build.gradle.kts` 的 `versionCode` 與 `versionName`，更新 `CHANGELOG.md` 的詳細紀錄，並新增 `docs/releases/v版本號.md` 作為簡短 Release 說明，再建立相符 tag（例如 v3.0.0）。發布流程會讀取該版本說明檔。
-目前更新方式是手動下載 GitHub Release 的 APK 後安裝。尚無 App 內檢查更新。
+正式版啟動時可自動檢查 GitHub Release，也可在設定手動檢查；下載完成後由 Android 系統驗證簽章並確認安裝。Android Studio debug 版因簽章不同，不支援 App 內更新。
 
 版本規則：`2.0.1` 為修正錯誤、`2.1.0` 為小功能更新、`3.0.0` 為大版本更新。
 
@@ -75,7 +77,7 @@ GitHub Actions 已設定：一般 push/PR 執行檢查並提供測試 APK；`v*`
 如果網站有固定分類，將分類名稱填入 `categories`，使用者就能單獨訂閱。若網站不是一般靜態頁面，請在同一筆資料指定 `AnnouncementParser`，並在 `app/src/main/java/tw/thorsheep/studentjournal/Announcements.kt` 加入對應抓取方法：`SHSD_JSON` 是公開 JSON API 範例，`CSIE_SECTIONS` 是分類 HTML 區塊範例。新增後先按「更新」確認 App 能取得標題、日期、分類與原文網址，再提供給使用者。
 
 ## 備份格式
-3.0.0 使用 `schemaVersion: 4`：`entries`（記帳）、`courses`、`meetings`、`items`、`subscriptions`、`keywords`、`options` 與 `exportedAt`。支援匯入 schema 1～3 的舊備份，舊課程與待辦會轉換並保留關聯。手機日曆事件與裝置日曆 ID 不匯出，換機後需重新勾選。公告內容會在還原後重新更新。
+3.1.0 使用 `schemaVersion: 5`：`entries`（記帳）、`courses`、`meetings`、`items`、`subscriptions`、`keywords`、`options` 與 `exportedAt`。支援匯入 schema 1～4 的舊備份，舊課程與待辦會轉換並保留關聯。手機日曆事件與裝置日曆 ID 不匯出，換機後需重新勾選。公告內容會在還原後重新更新。
 金額以整數分儲存。限制 5 MB / 20,000 筆，還原完整取代現有資料。
 備份未加密。卸載 App 會刪除本機資料，請先匯出。
 

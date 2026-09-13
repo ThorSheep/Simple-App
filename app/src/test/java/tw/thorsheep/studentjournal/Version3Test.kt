@@ -33,4 +33,8 @@ class Version3Test {
         assertEquals(listOf("android", "活動"), keywordMatches(a, null, listOf(AnnouncementKeyword(text = "android"), AnnouncementKeyword(text = "活動"), AnnouncementKeyword(text = "獎學金", enabled = false))))
     }
     @Test fun invalidOptionsRejected() { assertThrows(IllegalArgumentException::class.java) { AppOptions(intervalHours = 1).validate() } }
+    @Test fun settingsKeepHomeOrderAndTheme() {
+        val options = AppOptions(quick = listOf("course", "agenda"), homeSections = listOf("announcements", "money"), homePosition = 1, swipeNavigation = true, theme = "dark", checkAppUpdates = false)
+        assertEquals(options, BackupV4.decode(BackupV4.encode(archive().copy(options = options))).options)
+    }
 }

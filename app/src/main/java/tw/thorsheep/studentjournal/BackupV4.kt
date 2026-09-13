@@ -13,12 +13,12 @@ object BackupV4 {
     fun encode(a: ArchiveV4): String {
         val options = a.options ?: AppOptions()
         val root = JSONObject(Backup.encode(a.money, a.subscriptions.orEmpty(), options.quick.filter { it != "agenda" }))
-        root.put("schemaVersion", 4)
+        root.put("schemaVersion", 5)
         root.put("courses", JSONArray().apply { a.courses.forEach { c -> put(JSONObject().put("id", c.id).put("title", c.title).put("teacher", c.teacher).put("room", c.room).put("color", c.color).put("archived", c.archived)) } })
         root.put("meetings", JSONArray().apply { a.meetings.forEach { m -> put(JSONObject().put("id", m.id).put("courseId", m.courseId).put("day", m.day).put("start", m.start).put("end", m.end).put("room", m.room)) } })
         root.put("items", JSONArray().apply { a.items.forEach { i -> put(JSONObject().put("id", i.id).put("title", i.title).put("courseId", i.courseId ?: JSONObject.NULL).put("kind", i.kind).put("date", i.date).put("time", i.time).put("presentationDate", i.presentationDate).put("presentationTime", i.presentationTime).put("grouped", i.grouped).put("groupNote", i.groupNote).put("note", i.note).put("done", i.done).put("important", i.important)) } })
         root.put("keywords", JSONArray().apply { a.keywords.forEach { put(JSONObject().put("id", it.id).put("text", it.text).put("enabled", it.enabled)) } })
-        root.put("options", JSONObject().put("quick", JSONArray(options.quick)).put("showCourses", options.showCourses).put("showTasks", options.showTasks).put("intervalHours", options.intervalHours).put("wifiOnly", options.wifiOnly).put("notify", options.notify))
+        root.put("options", JSONObject().put("quick", JSONArray(options.quick)).put("showCourses", options.showCourses).put("showTasks", options.showTasks).put("intervalHours", options.intervalHours).put("wifiOnly", options.wifiOnly).put("notify", options.notify).put("homeSections", JSONArray(options.homeSections)).put("homePosition", options.homePosition).put("swipeNavigation", options.swipeNavigation).put("theme", options.theme).put("checkAppUpdates", options.checkAppUpdates))
         return root.toString(2).also { require(it.toByteArray().size <= Backup.MAX_BYTES) { "備份超過 5 MB" } }
     }
     fun decode(raw: String): ArchiveV4 {
@@ -32,7 +32,8 @@ object BackupV4 {
                 old.entries.filter { it.type == "task" }.map { AcademicItem(id = it.id, title = it.title, courseId = it.courseId.ifBlank { null }, date = it.date, note = it.note, done = it.done) },
                 old.subscriptions, emptyList(), old.quick?.let { AppOptions(quick = it) })
         }
-        require(root.getInt("schemaVersion") == 4 && root.getString("app") == "simple-app") { "不支援的備份版本" }
+        val schema = root.getInt("schemaVersion")
+        require(schema in 4..5 && root.getString("app") == "simple-app") { "不支援的備份版本" }
         val base = Backup.decodeArchive(JSONObject(root.toString()).put("schemaVersion", 3).toString())
         require(base.entries.all { it.type == "money" }) { "新版 entries 僅接受記帳資料" }
         fun objects(key: String): List<JSONObject> = root.getJSONArray(key).let { arr ->
@@ -52,7 +53,8 @@ object BackupV4 {
         require(keywords.all { it.id.isNotBlank() && it.id.length <= 100 && it.text.isNotBlank() && it.text.length <= 100 }) { "關鍵字無效" }
         val o = root.getJSONObject("options")
         val quick = o.getJSONArray("quick").let { a -> (0 until a.length()).map { a.getString(it) } }
-        val options = AppOptions(quick, o.bool("showCourses"), o.bool("showTasks"), o.getInt("intervalHours"), o.bool("wifiOnly"), o.bool("notify")).also { it.validate() }
+        val sections = o.optJSONArray("homeSections")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: homeSectionPages.filter { page -> page != "course" || o.optBoolean("showCourses", true) }.filter { page -> page != "task" || o.optBoolean("showTasks", true) }
+        val options = AppOptions(quick, o.bool("showCourses"), o.bool("showTasks"), o.getInt("intervalHours"), o.bool("wifiOnly"), o.bool("notify"), sections, o.optInt("homePosition", 2).coerceIn(0, quick.size), o.optBoolean("swipeNavigation", false), o.optString("theme", "system"), o.optBoolean("checkAppUpdates", true)).also { it.validate() }
         return ArchiveV4(base.entries, courses, meetings, items, base.subscriptions, keywords, options)
     }
     suspend fun snapshot(context: Context): ArchiveV4 {

@@ -49,16 +49,23 @@ fun keywordMatches(a: Announcement, source: AnnouncementSource?, keywords: List<
 
 data class AppOptions(val quick: List<String> = listOf("money", "course", "task", "announcements"),
     val showCourses: Boolean = true, val showTasks: Boolean = true, val intervalHours: Int = 0,
-    val wifiOnly: Boolean = false, val notify: Boolean = false) {
+    val wifiOnly: Boolean = false, val notify: Boolean = false, val homeSections: List<String> = listOf("money", "course", "task", "announcements"),
+    val homePosition: Int = 2, val swipeNavigation: Boolean = false, val theme: String = "system",
+    val checkAppUpdates: Boolean = true) {
     fun validate() {
-        require(quick.size <= 4 && quick.distinct().size == quick.size && quick.all { it in listOf("money", "course", "task", "announcements", "agenda") }) { "常用功能設定無效" }
+        require(quick.size <= 4 && quick.distinct().size == quick.size && quick.all { it in appPages }) { "常用功能設定無效" }
+        require(homeSections.distinct().size == homeSections.size && homeSections.all { it in homeSectionPages }) { "首頁內容設定無效" }
+        require(homePosition in 0..quick.size) { "首頁位置無效" }
         require(intervalHours in listOf(0, 6, 12, 24)) { "更新間隔無效" }
+        require(theme in themes) { "主題設定無效" }
     }
     fun persist(context: Context) {
         validate()
         context.getSharedPreferences("settings", 0).edit().putString("quick", quick.joinToString(","))
             .putBoolean("showCourses", showCourses).putBoolean("showTasks", showTasks)
-            .putInt("intervalHours", intervalHours).putBoolean("wifiOnly", wifiOnly).putBoolean("notify", notify).apply()
+            .putInt("intervalHours", intervalHours).putBoolean("wifiOnly", wifiOnly).putBoolean("notify", notify)
+            .putString("homeSections", homeSections.joinToString(",")).putInt("homePosition", homePosition)
+            .putBoolean("swipeNavigation", swipeNavigation).putString("theme", theme).putBoolean("checkAppUpdates", checkAppUpdates).apply()
         schedule(context, this)
     }
     companion object {
@@ -66,10 +73,14 @@ data class AppOptions(val quick: List<String> = listOf("money", "course", "task"
             val p = context.getSharedPreferences("settings", 0)
             val quick = p.getString("quick", "money,course,task,announcements")!!.split(',')
                 .map { if (it == "courses") "course" else it }
-                .filter { it in listOf("money", "course", "task", "announcements", "agenda") }.distinct().take(4)
+                .filter { it in appPages }.distinct().take(4)
+            val sections = p.getString("homeSections", "money,course,task,announcements")!!.split(',')
+                .filter { it in homeSectionPages }.distinct().ifEmpty { homeSectionPages }
             val hours = p.getInt("intervalHours", p.getLong("announcement_interval", 0).toInt()).takeIf { it in listOf(0, 6, 12, 24) } ?: 0
             return AppOptions(quick, p.getBoolean("showCourses", true), p.getBoolean("showTasks", true), hours,
-                p.getBoolean("wifiOnly", false), p.getBoolean("notify", p.getBoolean("keyword_notifications", false)))
+                p.getBoolean("wifiOnly", false), p.getBoolean("notify", p.getBoolean("keyword_notifications", false)), sections,
+                p.getInt("homePosition", 2).coerceIn(0, quick.size), p.getBoolean("swipeNavigation", false),
+                p.getString("theme", "system")!!.takeIf { it in themes } ?: "system", p.getBoolean("checkAppUpdates", true))
         }
         fun schedule(context: Context, options: AppOptions = read(context)) {
             val manager = WorkManager.getInstance(context)
@@ -82,6 +93,10 @@ data class AppOptions(val quick: List<String> = listOf("money", "course", "task"
         }
     }
 }
+
+val appPages = listOf("money", "course", "task", "agenda", "announcements")
+val homeSectionPages = listOf("money", "course", "task", "agenda", "announcements")
+val themes = listOf("system", "light", "dark")
 
 object AnnouncementUpdates {
     val mutex = Mutex()
