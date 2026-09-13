@@ -2,7 +2,7 @@
 
 從 3.0.0 起記錄各版本的詳細變更，最新版本置於最上方。GitHub Release 提供簡短摘要及 APK；較早版本請參閱歷史 Release。
 
-## [Unreleased]
+## [3.2.0] — 2026-09-14
 
 - 記帳新增「其他」分類，並依日期將交易分組，顯示日期、星期與每日淨額。
 - README 改為公開儲存庫適用的建置、發布、安全與隱私說明。
@@ -61,5 +61,6 @@
 - 測試涵蓋資料庫遷移、備份還原、課程刪除後保留事項、報告雙日期、關鍵字及通知去重。
 - 實機驗收步驟見 [3.0.0 測試清單](docs/3.0.0-testing.md)；長期背景排程仍受各手機系統行為影響。
 
+[3.2.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.2.0
 [3.1.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.1.0
 [3.0.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.0.0

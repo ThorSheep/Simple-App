@@ -41,8 +41,8 @@ GitHub Actions 會在一般 push 與 Pull Request 執行測試、lint 與 debug 
 發布新版本時，依序更新 `app/build.gradle.kts` 的 `versionCode`、`versionName`、[CHANGELOG](CHANGELOG.md) 及 `docs/releases/v版本號.md`，合併到 `main` 後建立並推送 tag，例如：
 
 ```powershell
-git tag -a v3.1.0 -m "發布 3.1.0"
-git push origin v3.1.0
+git tag -a v3.2.0 -m "發布 3.2.0"
+git push origin v3.2.0
 ```
 
 Release 建置完成後，App 會從公開的 GitHub Release 檢查與下載正式 APK。Android Studio 安裝的 debug 版不支援 App 內更新。
