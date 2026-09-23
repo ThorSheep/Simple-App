@@ -27,6 +27,12 @@
 
 Debug APK 位於 `app/build/outputs/apk/debug/app-debug.apk`，僅供開發測試。Debug 與正式版使用不同套件識別碼和簽章，可同時安裝，資料彼此獨立。
 
+## 自託管同步（v4 開發中）
+
+同步伺服器位於 [`server/`](server/)，可用 Docker Compose 搭配 Caddy 部署。先依照 [`server/README.md`](server/README.md) 設定 DNS、HTTPS 網域與一次性配對碼；確認 `https://你的網域/healthz` 回傳 `{"status":"ok"}` 後，在 App 的「設定 → 資料與版本」輸入伺服器網址及配對碼。
+
+首次配對會同步現有收支、課程、上課時段、待辦、公告訂閱與關鍵字。手機行事曆、公告快取、已讀狀態、通知與外觀偏好維持裝置本機。同步採離線優先；在兩台裝置同時修改同一筆資料時，使用最後修改優先規則。自託管同步仍應保留 JSON 匯出備份。
+
 ## 發布正式版
 
 正式版固定使用 `tw.thorsheep.simpleapp` 與同一把簽署金鑰。金鑰、密碼、本機設定與個人備份必須保留在 Git 追蹤範圍外。
