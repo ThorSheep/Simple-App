@@ -14,8 +14,10 @@ class SyncEngine(
         val result = send(connection, state.cursor, pending)
         db.withTransaction {
             if (result.acceptedOperationIds.isNotEmpty()) db.sync().acknowledge(result.acceptedOperationIds)
-            val money = SyncMoneyRepository(db, deviceId)
-            result.changes.sortedBy { it.cursor }.forEach { change -> money.apply(change) }
+            val money = SyncMoneyRepository(db, deviceId); val academic = SyncAcademicRepository(db, deviceId)
+            result.changes.sortedWith(compareBy<RemoteSyncChange> { when (it.operation.entityType) { "course" -> 0; "courseMeeting" -> 1; "academicItem" -> 2; else -> 3 } }.thenBy { it.cursor }).forEach { change ->
+                if (!academic.apply(change)) money.apply(change)
+            }
             db.sync().saveState(state.copy(cursor = maxOf(state.cursor, result.cursor), lastSuccessAt = System.currentTimeMillis(), lastError = ""))
         }
         return result
