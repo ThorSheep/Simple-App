@@ -1,0 +1,29 @@
+services:
+  sync:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_PATH: /data/sync.db
+      PAIR_CODE: ${PAIR_CODE:?Set PAIR_CODE in .env}
+    volumes:
+      - sync-data:/data
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - sync
+    environment:
+      SYNC_DOMAIN: ${SYNC_DOMAIN:?Set SYNC_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  sync-data:
+  caddy-data:
+  caddy-config:
