@@ -11,3 +11,6 @@ dist/
 .signing/
 *.backup.json
 .kotlin/
+
+# 本機自託管同步伺服器的網域與配對密碼。
+server/.env
