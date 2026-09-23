@@ -48,6 +48,9 @@ interface EntryDao {
     @Query("SELECT * FROM entries")
     fun observe(): Flow<List<Entry>>
 
+    @Query("SELECT * FROM entries WHERE id = :id")
+    suspend fun find(id: String): Entry?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(entry: Entry)
 
