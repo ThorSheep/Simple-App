@@ -80,7 +80,8 @@ import java.time.format.DateTimeFormatter
 
 @Composable fun SettingsV3(options: AppOptions, update: UpdateState, save: (AppOptions) -> Unit, export: () -> Unit, import: () -> Unit,
     checkUpdate: () -> Unit, downloadUpdate: (AppRelease) -> Unit, installUpdate: (AppRelease, java.io.File) -> Unit,
-    selectedSection: String, selectSection: (String) -> Unit) {
+    selectedSection: String, selectSection: (String) -> Unit, syncConnection: SyncConnection?, syncInfo: String,
+    pairSync: (String, String) -> Unit, runSync: () -> Unit, disconnectSync: () -> Unit) {
     PageList {
         item { SectionTitle("設定"); CategoryTabs(selectedSection, listOf("interface" to "介面", "data" to "資料與版本"), selectSection) }
         when (selectedSection) {
@@ -98,6 +99,21 @@ import java.time.format.DateTimeFormatter
                 item { SectionTitle("外觀"); Choice("主題", options.theme, listOf("system" to "跟隨系統", "light" to "淺色", "dark" to "深色")) { save(options.copy(theme = it)) } }
             }
             else -> {
+                item { SectionTitle("自託管同步")
+                    var serverUrl by rememberSaveable(syncConnection?.serverUrl) { mutableStateOf(syncConnection?.serverUrl ?: "") }
+                    var pairCode by rememberSaveable { mutableStateOf("") }
+                    if (syncConnection == null) {
+                        Text("輸入你自行架設的 HTTPS 伺服器網址與一次性配對碼。")
+                        OutlinedTextField(serverUrl, { serverUrl = it }, label = { Text("伺服器網址") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(pairCode, { pairCode = it }, label = { Text("配對碼") }, modifier = Modifier.fillMaxWidth())
+                        Button({ pairSync(serverUrl, pairCode) }, Modifier.fillMaxWidth(), enabled = serverUrl.isNotBlank() && pairCode.isNotBlank()) { Text("配對並同步") }
+                    } else {
+                        Text("已連線至 ${syncConnection.serverUrl}")
+                        Button(runSync, Modifier.fillMaxWidth()) { Text("立即同步") }
+                        OutlinedButton(disconnectSync, Modifier.fillMaxWidth()) { Text("中斷同步") }
+                    }
+                    if (syncInfo.isNotBlank()) Text(syncInfo, color = MaterialTheme.colorScheme.primary)
+                }
                 item { SectionTitle("App 版本更新"); ToggleRow("啟動時自動檢查新版本", options.checkAppUpdates) { save(options.copy(checkAppUpdates = it)) }
             when (update) {
                 UpdateState.Idle -> TextButton(checkUpdate) { Text("檢查新版本") }

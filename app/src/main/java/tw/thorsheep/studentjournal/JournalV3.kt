@@ -66,6 +66,8 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var deletion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var archive by remember { mutableStateOf<ArchiveV4?>(null) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var syncConnection by remember { mutableStateOf(SyncSettings.connection(context)) }
+    var syncInfo by remember { mutableStateOf("") }
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message ?: "操作失敗") } finally { busy = false } } }
@@ -110,7 +112,10 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                         checkUpdate = { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } },
                         downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
-                        selectedSection = settingsSection, selectSection = { settingsSection = it }
+                        selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
+                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); syncInfo = "配對完成" } },
+                        runSync = { syncConnection?.let { connection -> work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "同步完成：收到 ${result.changes.size} 筆變更" } } },
+                        disconnectSync = { SyncSettings.clear(context); syncConnection = null; syncInfo = "已中斷同步" }
                     )
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
