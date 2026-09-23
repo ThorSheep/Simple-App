@@ -54,7 +54,7 @@ interface AcademicDao {
     @Query("SELECT * FROM course_meetings") suspend fun allMeetings(): List<CourseMeeting>
     @Query("SELECT * FROM academic_items") suspend fun allItems(): List<AcademicItem>
     @Upsert suspend fun saveCourse(course: Course)
-    @Insert suspend fun insertMeetings(meetings: List<CourseMeeting>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertMeetings(meetings: List<CourseMeeting>)
     @Upsert suspend fun saveItem(item: AcademicItem)
     @Query("DELETE FROM course_meetings WHERE courseId = :id") suspend fun clearMeetings(id: String)
     @Query("DELETE FROM course_meetings WHERE id = :id") suspend fun deleteMeeting(id: String)
