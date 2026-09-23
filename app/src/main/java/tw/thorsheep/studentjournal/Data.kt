@@ -113,8 +113,8 @@ interface AnnouncementDao {
 }
 
 @Database(
-    entities = [Entry::class, Subscription::class, Announcement::class, Course::class, CourseMeeting::class, AcademicItem::class, AnnouncementKeyword::class, SeenAnnouncement::class],
-    version = 5,
+    entities = [Entry::class, Subscription::class, Announcement::class, Course::class, CourseMeeting::class, AcademicItem::class, AnnouncementKeyword::class, SeenAnnouncement::class, SyncMetadata::class, SyncOutbox::class, SyncState::class],
+    version = 6,
     exportSchema = false
 )
 abstract class JournalDb : RoomDatabase() {
@@ -123,6 +123,7 @@ abstract class JournalDb : RoomDatabase() {
     abstract fun announcements(): AnnouncementDao
     abstract fun academic(): AcademicDao
     abstract fun automation(): AutomationDao
+    abstract fun sync(): SyncDao
 
     companion object {
         @Volatile
@@ -147,7 +148,7 @@ abstract class JournalDb : RoomDatabase() {
                     override fun migrate(db: SupportSQLiteDatabase) {
                         db.execSQL("ALTER TABLE announcements ADD COLUMN category TEXT NOT NULL DEFAULT ''")
                     }
-                }, MIGRATION_3_5, MIGRATION_4_5).build().also { instance = it }
+                }, MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
         }
     }
 }
