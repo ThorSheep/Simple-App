@@ -1,24 +1,30 @@
-# Simple App Sync Server
+# Simple App 自託管同步伺服器
 
-This is the self-hosted synchronization endpoint for Simple App v4. It is intended for one person's own devices and is not a public multi-user cloud service.
+這是 Simple App v4 的自託管同步端點，供同一位使用者的個人裝置同步，不是公開的多人雲端服務。
 
-## Deploy with Docker Compose
+## 使用 Docker Compose 部署
 
-1. Copy `.env.example` to `.env` and set `SYNC_DOMAIN` to a DNS name that points to the server.
-2. Set `PAIR_CODE` to a newly generated random secret of at least 16 characters.
-3. Ensure ports 80 and 443 reach the server, then run `docker compose up -d --build`.
-4. Confirm `https://<your-domain>/healthz` returns `{"status":"ok"}` before pairing a device.
+1. 複製 `.env.example` 成為 `.env`。
+2. 將 `SYNC_DOMAIN` 設為已指向這台伺服器的網域名稱，例如 `sync.example.com`。
+3. 將 `PAIR_CODE` 設為新產生、至少 16 字元的隨機密碼。
+4. 確認伺服器的 80 與 443 連接埠可從網際網路連入，然後在本目錄執行：
 
-Caddy obtains and renews the HTTPS certificate. The SQLite database lives in the `sync-data` Docker volume; back up that volume before upgrades.
+   ```powershell
+   docker compose up -d --build
+   ```
 
-For private deployments over Tailscale or WireGuard, place a reverse proxy trusted by the devices in front of the `sync` service instead of exposing it directly to the internet.
+5. 開啟 `https://你的網域/healthz`；看到 `{"status":"ok"}` 後，再以 App 配對裝置。
 
-## Environment
+Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker 的 `sync-data` 資料卷，升級前請先備份此資料卷。
 
-| Variable | Default | Purpose |
+若採 Tailscale 或 WireGuard 私人網路部署，請使用裝置可信任的反向代理連到 `sync` 服務，而非將服務直接公開到網際網路。
+
+## 環境變數
+
+| 變數 | 預設值 | 用途 |
 | --- | --- | --- |
-| `LISTEN_ADDR` | `:8080` | HTTP listener used behind the reverse proxy |
-| `DATABASE_PATH` | `/data/sync.db` | SQLite database path |
-| `PAIR_CODE` | none | Required one-time pairing secret; 16+ characters |
+| `LISTEN_ADDR` | `:8080` | 反向代理後方的 HTTP 監聽位址 |
+| `DATABASE_PATH` | `/data/sync.db` | SQLite 資料庫位置 |
+| `PAIR_CODE` | 無 | 裝置配對所需的密碼；至少 16 字元 |
 
-The server accepts only the version 1 synchronization protocol. Keep the pairing secret private and change it after all intended devices have paired.
+伺服器目前只接受同步協定第 1 版。請妥善保管配對碼；所有預定裝置配對完成後，建議更換它。
