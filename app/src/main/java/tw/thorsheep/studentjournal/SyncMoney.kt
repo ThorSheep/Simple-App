@@ -26,6 +26,15 @@ object SyncMoneyPayload {
 }
 
 class SyncMoneyRepository(private val db: JournalDb, private val deviceId: String) {
+    suspend fun bootstrap() = db.withTransaction {
+        db.automation().entries().filter { it.type == MONEY_ENTITY }.forEach { entry ->
+            if (db.sync().metadata(MONEY_ENTITY, entry.id) == null) {
+                val revision = SyncClock.next(null, deviceId)
+                record(entry.id, revision, false, SyncMoneyPayload.encode(entry))
+            }
+        }
+    }
+
     suspend fun save(entry: Entry) = db.withTransaction {
         require(entry.type == MONEY_ENTITY) { "僅能同步收支資料" }
         Backup.validate(entry)

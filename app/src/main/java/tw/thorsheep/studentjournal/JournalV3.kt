@@ -113,9 +113,9 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                         downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
                         selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
-                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); syncInfo = "配對完成" } },
+                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); val connection = syncConnection ?: error("無法保存同步設定"); SyncMoneyRepository(db, connection.deviceId).bootstrap(); val result = SyncEngine(db, connection.deviceId).synchronize(connection); SyncWorker.schedule(context); syncInfo = "配對完成：同步 ${result.changes.size} 筆變更" } },
                         runSync = { syncConnection?.let { connection -> work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "同步完成：收到 ${result.changes.size} 筆變更" } } },
-                        disconnectSync = { SyncSettings.clear(context); syncConnection = null; syncInfo = "已中斷同步" }
+                        disconnectSync = { SyncSettings.clear(context); SyncWorker.cancel(context); syncConnection = null; syncInfo = "已中斷同步" }
                     )
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -124,8 +124,8 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     }
     courseEdit?.let { c -> CourseDialog(c, meetings.filter { it.courseId == c.id }.ifEmpty { if (c.title.isBlank()) listOf(CourseMeeting(courseId = c.id, day = LocalDate.now().dayOfWeek.value)) else emptyList() }, { courseEdit = null }) { course, times -> work { db.academic().save(course, times); courseEdit = null } } }
     itemEdit?.let { ItemDialog(it, courses, { itemEdit = null }) { item -> work { db.academic().saveItem(item); itemEdit = null } } }
-    moneyEdit?.let { MoneyEditor(it, { moneyEdit = null }) { row -> work { db.entries().save(row); moneyEdit = null } } }
-    deletion?.let { (kind, id) -> AlertDialog(onDismissRequest = { deletion = null }, title = { Text("確認刪除") }, text = { Text(if (kind == "course") "課程與上課時段會移除；相關待辦保留並解除課程關聯。" else "刪除後無法復原。") }, confirmButton = { TextButton({ work { when (kind) { "course" -> db.academic().deleteCourse(id); "task" -> db.academic().deleteItem(id); else -> db.entries().deleteId(id) }; deletion = null } }) { Text("刪除") } }, dismissButton = { TextButton({ deletion = null }) { Text("取消") } }) }
+    moneyEdit?.let { MoneyEditor(it, { moneyEdit = null }) { row -> work { val connection = syncConnection; if (connection == null) db.entries().save(row) else SyncMoneyRepository(db, connection.deviceId).save(row); moneyEdit = null } } }
+    deletion?.let { (kind, id) -> AlertDialog(onDismissRequest = { deletion = null }, title = { Text("確認刪除") }, text = { Text(if (kind == "course") "課程與上課時段會移除；相關待辦保留並解除課程關聯。" else "刪除後無法復原。") }, confirmButton = { TextButton({ work { when (kind) { "course" -> db.academic().deleteCourse(id); "task" -> db.academic().deleteItem(id); else -> { val connection = syncConnection; if (connection == null) db.entries().deleteId(id) else SyncMoneyRepository(db, connection.deviceId).delete(id) } }; deletion = null } }) { Text("刪除") } }, dismissButton = { TextButton({ deletion = null }) { Text("取消") } }) }
     archive?.let { data -> AlertDialog(onDismissRequest = { archive = null }, title = { Text("確認還原備份") }, text = { Text("${data.courses.size} 門課、${data.items.size} 件事項、${data.money.size} 筆收支。還原會取代現有 App 資料與備份設定。手機行事曆不受影響。") }, confirmButton = { TextButton({ work { withContext(Dispatchers.IO) { BackupV4.restore(context, data) }; options = AppOptions.read(context); archive = null; message("還原完成") } }) { Text("取代並還原") } }, dismissButton = { TextButton({ archive = null }) { Text("取消") } }) }
 }
 
