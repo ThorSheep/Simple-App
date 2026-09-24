@@ -57,6 +57,35 @@ func TestRevokedDeviceCannotSynchronize(t *testing.T) {
 	syncCall(t, handler, token, syncRequest{ProtocolVersion: protocolVersion, DeviceID: "device-a"}, http.StatusUnauthorized)
 }
 
+func TestEmptySyncReturnsAnEmptyChangesArray(t *testing.T) {
+	db, err := openDatabase(filepath.Join(t.TempDir(), "sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	handler := (&server{db: db, pairCode: "pair-code-with-enough-entropy"}).routes()
+	token := pairDevice(t, handler, "device-a", "Phone")
+
+	body, err := json.Marshal(syncRequest{ProtocolVersion: protocolVersion, DeviceID: "device-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/sync", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("sync returned %d: %s", response.Code, response.Body.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(raw["changes"]); got != "[]" {
+		t.Fatalf("changes must be an empty JSON array, got %s", got)
+	}
+}
+
 func pairDevice(t *testing.T, handler http.Handler, deviceID, name string) string {
 	t.Helper()
 	body, err := json.Marshal(pairRequest{PairCode: "pair-code-with-enough-entropy", DeviceID: deviceID, Name: name})

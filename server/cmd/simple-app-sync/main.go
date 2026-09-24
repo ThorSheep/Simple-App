@@ -230,7 +230,7 @@ func (s *server) sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	response := syncResponse{AcceptedOperationIDs: accepted, Cursor: request.Cursor}
+	response := syncResponse{AcceptedOperationIDs: accepted, Cursor: request.Cursor, Changes: make([]change, 0)}
 	for rows.Next() {
 		var item change
 		var deleted int
