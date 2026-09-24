@@ -2,6 +2,8 @@ package tw.thorsheep.studentjournal
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -51,12 +53,13 @@ object SyncJson {
 }
 
 object SyncHttpClient {
-    fun pair(serverUrl: String, pairCode: String, deviceId: String, name: String): String =
+    suspend fun pair(serverUrl: String, pairCode: String, deviceId: String, name: String): String = withContext(Dispatchers.IO) {
         SyncJson.pairToken(post(serverUrl, "/v1/pair", SyncJson.pairRequest(pairCode, deviceId, name)))
+    }
 
-    fun sync(connection: SyncConnection, cursor: Long, operations: List<SyncOutbox>): SyncResult {
+    suspend fun sync(connection: SyncConnection, cursor: Long, operations: List<SyncOutbox>): SyncResult = withContext(Dispatchers.IO) {
         connection.validate()
-        return SyncJson.syncResult(post(connection.serverUrl, "/v1/sync", SyncJson.syncRequest(connection, cursor, operations), connection.token))
+        SyncJson.syncResult(post(connection.serverUrl, "/v1/sync", SyncJson.syncRequest(connection, cursor, operations), connection.token))
     }
 
     private fun post(serverUrl: String, path: String, body: String, token: String? = null): String {

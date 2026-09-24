@@ -70,7 +70,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var syncInfo by remember { mutableStateOf("") }
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
-    fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message ?: "操作失敗") } finally { busy = false } } }
+    fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message?.takeIf { it.isNotBlank() } ?: "同步操作失敗（${e.javaClass.simpleName}）") } finally { busy = false } } }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
     LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }

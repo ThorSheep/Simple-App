@@ -5,7 +5,7 @@ import androidx.room.withTransaction
 class SyncEngine(
     private val db: JournalDb,
     private val deviceId: String,
-    private val send: (SyncConnection, Long, List<SyncOutbox>) -> SyncResult = SyncHttpClient::sync
+    private val send: suspend (SyncConnection, Long, List<SyncOutbox>) -> SyncResult = SyncHttpClient::sync
 ) {
     suspend fun synchronize(connection: SyncConnection): SyncResult {
         require(connection.deviceId == deviceId) { "同步裝置不符" }
