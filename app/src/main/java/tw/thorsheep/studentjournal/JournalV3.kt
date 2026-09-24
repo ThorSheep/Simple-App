@@ -16,6 +16,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -40,7 +44,7 @@ import java.time.*
 private val pagesV3 = linkedMapOf("home" to "首頁", "money" to "記帳", "course" to "課程", "task" to "待辦", "agenda" to "行事曆／行程", "announcements" to "公告", "settings" to "設定")
 private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.AccountBalanceWallet; "course" -> Icons.Outlined.School; "task" -> Icons.Outlined.CheckCircle; "agenda" -> Icons.Outlined.DateRange; "announcements" -> Icons.Outlined.Campaign; "settings" -> Icons.Outlined.Settings; else -> Icons.Outlined.Home }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable fun JournalV3(onThemeChanged: (String) -> Unit) {
     val context = LocalContext.current
     val db = remember { JournalDb.get(context) }
@@ -71,6 +75,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message?.takeIf { it.isNotBlank() } ?: "同步操作失敗（${e.javaClass.simpleName}）") } finally { busy = false } } }
+    fun synchronize(connection: SyncConnection) = work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "同步完成：收到 ${result.changes.size} 筆變更"; message(syncInfo) }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
     LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }
@@ -98,7 +103,8 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
             }) { Icon(Icons.Outlined.Add, "新增") } }) { padding ->
             val swipePages = options.quick.filter { it in pagesV3 }.toMutableList().also { it.add(options.homePosition.coerceIn(0, options.quick.size), "home") }
             var drag by remember(page, swipePages, options.swipeNavigation) { mutableFloatStateOf(0f) }
-            Box(Modifier.padding(padding).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
+            val pullRefresh = rememberPullRefreshState(busy, { syncConnection?.let(::synchronize) ?: message("尚未設定同步伺服器") })
+            Box(Modifier.padding(padding).fillMaxSize().pullRefresh(pullRefresh).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
                 when (page) {
                     "home" -> HomeV3(money, courses, meetings, tasks, visibleNews, keywords, sources, options) { page = it }
                     "money" -> MoneyScreen(money, month, { month = it }, { moneyEdit = it }, { deletion = "money" to it.id })
@@ -114,11 +120,12 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
                         selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
                         pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); val connection = syncConnection ?: error("無法保存同步設定"); SyncMoneyRepository(db, connection.deviceId).bootstrap(); SyncAcademicRepository(db, connection.deviceId).bootstrap(); SyncPreferencesRepository(db, connection.deviceId).bootstrap(); val result = SyncEngine(db, connection.deviceId).synchronize(connection); SyncWorker.schedule(context); syncInfo = "配對完成：同步 ${result.changes.size} 筆變更" } },
-                        runSync = { syncConnection?.let { connection -> work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "同步完成：收到 ${result.changes.size} 筆變更" } } },
+                        runSync = { syncConnection?.let(::synchronize) },
                         disconnectSync = { SyncSettings.clear(context); SyncWorker.cancel(context); syncConnection = null; syncInfo = "已中斷同步" }
                     )
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                PullRefreshIndicator(busy, pullRefresh, Modifier.align(Alignment.TopCenter))
             }
         }
     }
