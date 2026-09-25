@@ -16,6 +16,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -40,7 +44,7 @@ import java.time.*
 private val pagesV3 = linkedMapOf("home" to "首頁", "money" to "記帳", "course" to "課程", "task" to "待辦", "agenda" to "行事曆／行程", "announcements" to "公告", "settings" to "設定")
 private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.AccountBalanceWallet; "course" -> Icons.Outlined.School; "task" -> Icons.Outlined.CheckCircle; "agenda" -> Icons.Outlined.DateRange; "announcements" -> Icons.Outlined.Campaign; "settings" -> Icons.Outlined.Settings; else -> Icons.Outlined.Home }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable fun JournalV3(onThemeChanged: (String) -> Unit) {
     val context = LocalContext.current
     val db = remember { JournalDb.get(context) }
@@ -66,9 +70,12 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var deletion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var archive by remember { mutableStateOf<ArchiveV4?>(null) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var syncConnection by remember { mutableStateOf(SyncSettings.connection(context)) }
+    var syncInfo by remember { mutableStateOf("") }
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
-    fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message ?: "操作失敗") } finally { busy = false } } }
+    fun work(action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action() } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message?.takeIf { it.isNotBlank() } ?: "同步操作失敗（${e.javaClass.simpleName}）") } finally { busy = false } } }
+    fun synchronize(connection: SyncConnection) = work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "同步完成：收到 ${result.changes.size} 筆變更"; message(syncInfo) }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
     LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }
@@ -96,31 +103,36 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
             }) { Icon(Icons.Outlined.Add, "新增") } }) { padding ->
             val swipePages = options.quick.filter { it in pagesV3 }.toMutableList().also { it.add(options.homePosition.coerceIn(0, options.quick.size), "home") }
             var drag by remember(page, swipePages, options.swipeNavigation) { mutableFloatStateOf(0f) }
-            Box(Modifier.padding(padding).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
+            val pullRefresh = rememberPullRefreshState(busy, { syncConnection?.let(::synchronize) ?: message("尚未設定同步伺服器") })
+            Box(Modifier.padding(padding).fillMaxSize().pullRefresh(pullRefresh).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
                 when (page) {
                     "home" -> HomeV3(money, courses, meetings, tasks, visibleNews, keywords, sources, options) { page = it }
                     "money" -> MoneyScreen(money, month, { month = it }, { moneyEdit = it }, { deletion = "money" to it.id })
-                    "course" -> CoursePage(courses, meetings, tasks, { courseEdit = it }, { deletion = "course" to it.id }, { itemEdit = AcademicItem(title = "", courseId = it) }, { itemEdit = it }, { item, done -> work { db.academic().saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
-                    "task" -> TaskPage(courses, tasks, { itemEdit = it }, { item, done -> work { db.academic().saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
+                    "course" -> CoursePage(courses, meetings, tasks, { courseEdit = it }, { deletion = "course" to it.id }, { itemEdit = AcademicItem(title = "", courseId = it) }, { itemEdit = it }, { item, done -> work { val c = syncConnection; if (c == null) db.academic().saveItem(item.copy(done = done)) else SyncAcademicRepository(db, c.deviceId).saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
+                    "task" -> TaskPage(courses, tasks, { itemEdit = it }, { item, done -> work { val c = syncConnection; if (c == null) db.academic().saveItem(item.copy(done = done)) else SyncAcademicRepository(db, c.deviceId).saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "agenda" -> AgendaPage(courses, meetings, tasks)
-                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, options, { id, enabled -> work { if (enabled) db.subscriptions().save(Subscription(id)) else db.subscriptions().delete(id) } }, { source -> work { db.subscriptions().delete(source.id); source.categories.forEach { db.subscriptions().delete("${source.id}#$it") } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, ::saveOptions, { enabled -> if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS) else saveOptions(options.copy(notify = enabled)) }, { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; db.automation().save(word) } }, { word -> work { db.automation().delete(word.id) } })
+                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, options, { id, enabled -> work { val c = syncConnection; if (enabled) { if (c == null) db.subscriptions().save(Subscription(id)) else SyncPreferencesRepository(db, c.deviceId).save(Subscription(id)) } else if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(db, c.deviceId).deleteSubscription(id) } }, { source -> work { val c = syncConnection; listOf(source.id) + source.categories.map { "${source.id}#$it" }.forEach { id -> if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(db, c.deviceId).deleteSubscription(id) } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, ::saveOptions, { enabled -> if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS) else saveOptions(options.copy(notify = enabled)) }, { word -> work { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; val c = syncConnection; if (c == null) db.automation().save(word) else SyncPreferencesRepository(db, c.deviceId).save(word) } }, { word -> work { val c = syncConnection; if (c == null) db.automation().delete(word.id) else SyncPreferencesRepository(db, c.deviceId).deleteKeyword(word.id) } })
                     else -> SettingsV3(
                         options = options, update = updateState, save = ::saveOptions,
                         export = { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, import = { import.launch(arrayOf("application/json", "text/plain")) },
                         checkUpdate = { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } },
                         downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
-                        selectedSection = settingsSection, selectSection = { settingsSection = it }
+                        selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
+                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); val connection = syncConnection ?: error("無法保存同步設定"); SyncMoneyRepository(db, connection.deviceId).bootstrap(); SyncAcademicRepository(db, connection.deviceId).bootstrap(); SyncPreferencesRepository(db, connection.deviceId).bootstrap(); val result = SyncEngine(db, connection.deviceId).synchronize(connection); SyncWorker.schedule(context); syncInfo = "配對完成：同步 ${result.changes.size} 筆變更" } },
+                        runSync = { syncConnection?.let(::synchronize) },
+                        disconnectSync = { SyncSettings.clear(context); SyncWorker.cancel(context); syncConnection = null; syncInfo = "已中斷同步" }
                     )
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                PullRefreshIndicator(busy, pullRefresh, Modifier.align(Alignment.TopCenter))
             }
         }
     }
-    courseEdit?.let { c -> CourseDialog(c, meetings.filter { it.courseId == c.id }.ifEmpty { if (c.title.isBlank()) listOf(CourseMeeting(courseId = c.id, day = LocalDate.now().dayOfWeek.value)) else emptyList() }, { courseEdit = null }) { course, times -> work { db.academic().save(course, times); courseEdit = null } } }
-    itemEdit?.let { ItemDialog(it, courses, { itemEdit = null }) { item -> work { db.academic().saveItem(item); itemEdit = null } } }
-    moneyEdit?.let { MoneyEditor(it, { moneyEdit = null }) { row -> work { db.entries().save(row); moneyEdit = null } } }
-    deletion?.let { (kind, id) -> AlertDialog(onDismissRequest = { deletion = null }, title = { Text("確認刪除") }, text = { Text(if (kind == "course") "課程與上課時段會移除；相關待辦保留並解除課程關聯。" else "刪除後無法復原。") }, confirmButton = { TextButton({ work { when (kind) { "course" -> db.academic().deleteCourse(id); "task" -> db.academic().deleteItem(id); else -> db.entries().deleteId(id) }; deletion = null } }) { Text("刪除") } }, dismissButton = { TextButton({ deletion = null }) { Text("取消") } }) }
+    courseEdit?.let { c -> CourseDialog(c, meetings.filter { it.courseId == c.id }.ifEmpty { if (c.title.isBlank()) listOf(CourseMeeting(courseId = c.id, day = LocalDate.now().dayOfWeek.value)) else emptyList() }, { courseEdit = null }) { course, times -> work { val x = syncConnection; if (x == null) db.academic().save(course, times) else SyncAcademicRepository(db, x.deviceId).saveCourse(course, times); courseEdit = null } } }
+    itemEdit?.let { ItemDialog(it, courses, { itemEdit = null }) { item -> work { val x = syncConnection; if (x == null) db.academic().saveItem(item) else SyncAcademicRepository(db, x.deviceId).saveItem(item); itemEdit = null } } }
+    moneyEdit?.let { MoneyEditor(it, { moneyEdit = null }) { row -> work { val connection = syncConnection; if (connection == null) db.entries().save(row) else SyncMoneyRepository(db, connection.deviceId).save(row); moneyEdit = null } } }
+    deletion?.let { (kind, id) -> AlertDialog(onDismissRequest = { deletion = null }, title = { Text("確認刪除") }, text = { Text(if (kind == "course") "課程與上課時段會移除；相關待辦保留並解除課程關聯。" else "刪除後無法復原。") }, confirmButton = { TextButton({ work { val c = syncConnection; when (kind) { "course" -> if (c == null) db.academic().deleteCourse(id) else SyncAcademicRepository(db, c.deviceId).deleteCourse(id); "task" -> if (c == null) db.academic().deleteItem(id) else SyncAcademicRepository(db, c.deviceId).deleteItem(id); else -> if (c == null) db.entries().deleteId(id) else SyncMoneyRepository(db, c.deviceId).delete(id) }; deletion = null } }) { Text("刪除") } }, dismissButton = { TextButton({ deletion = null }) { Text("取消") } }) }
     archive?.let { data -> AlertDialog(onDismissRequest = { archive = null }, title = { Text("確認還原備份") }, text = { Text("${data.courses.size} 門課、${data.items.size} 件事項、${data.money.size} 筆收支。還原會取代現有 App 資料與備份設定。手機行事曆不受影響。") }, confirmButton = { TextButton({ work { withContext(Dispatchers.IO) { BackupV4.restore(context, data) }; options = AppOptions.read(context); archive = null; message("還原完成") } }) { Text("取代並還原") } }, dismissButton = { TextButton({ archive = null }) { Text("取消") } }) }
 }
 

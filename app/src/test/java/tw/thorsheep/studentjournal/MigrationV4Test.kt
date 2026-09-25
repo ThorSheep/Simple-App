@@ -48,7 +48,7 @@ class MigrationV4Test {
             }
             db.version = if (prototype) 4 else 3
         }
-        val db = Room.databaseBuilder(context, JournalDb::class.java, name).addMigrations(MIGRATION_3_5, MIGRATION_4_5).allowMainThreadQueries().build()
+        val db = Room.databaseBuilder(context, JournalDb::class.java, name).addMigrations(MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6).allowMainThreadQueries().build()
         try {
             assertEquals("資料結構", db.academic().allCourses().single().title)
             assertEquals("09:00", db.academic().allMeetings().single().start)
