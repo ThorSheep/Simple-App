@@ -1,30 +1,51 @@
 services:
-  init-sync-data:
+  init-test-data:
     image: busybox:1.36
     restart: "no"
     command: ["sh", "-c", "chown -R 65532:65532 /data"]
     volumes:
       - sync-data:/data
 
-  sync:
+  init-prod-data:
+    image: busybox:1.36
+    restart: "no"
+    command: ["sh", "-c", "chown -R 65532:65532 /data"]
+    volumes:
+      - sync-prod-data:/data
+
+  sync-test:
     build: .
     restart: unless-stopped
     depends_on:
-      init-sync-data:
+      init-test-data:
         condition: service_completed_successfully
     environment:
       DATABASE_PATH: /data/sync.db
-      PAIR_CODE: ${PAIR_CODE:?Set PAIR_CODE in .env}
+      PAIR_CODE: ${TEST_PAIR_CODE:?Set TEST_PAIR_CODE in .env}
     volumes:
       - sync-data:/data
+
+  sync-prod:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      init-prod-data:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_PATH: /data/sync.db
+      PAIR_CODE: ${PROD_PAIR_CODE:?Set PROD_PAIR_CODE in .env}
+    volumes:
+      - sync-prod-data:/data
 
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
     depends_on:
-      - sync
+      - sync-test
+      - sync-prod
     environment:
-      SYNC_DOMAIN: ${SYNC_DOMAIN:?Set SYNC_DOMAIN in .env}
+      SYNC_TEST_DOMAIN: ${SYNC_TEST_DOMAIN:?Set SYNC_TEST_DOMAIN in .env}
+      SYNC_PROD_DOMAIN: ${SYNC_PROD_DOMAIN:?Set SYNC_PROD_DOMAIN in .env}
     ports:
       - "80:80"
       - "443:443"
@@ -35,5 +56,6 @@ services:
 
 volumes:
   sync-data:
+  sync-prod-data:
   caddy-data:
   caddy-config:
