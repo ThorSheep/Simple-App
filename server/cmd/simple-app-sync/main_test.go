@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestPairAndSynchronizeAcrossDevices(t *testing.T) {
@@ -36,6 +40,36 @@ func TestPairAndSynchronizeAcrossDevices(t *testing.T) {
 	responseB := syncCall(t, handler, tokenB, syncRequest{ProtocolVersion: protocolVersion, DeviceID: "device-b"}, http.StatusOK)
 	if len(responseB.Changes) != 1 || responseB.Changes[0].EntityID != "entry-a" {
 		t.Fatalf("second device did not receive the change: %+v", responseB)
+	}
+}
+
+func TestChangeNotifiesOtherConnectedDevice(t *testing.T) {
+	db, err := openDatabase(filepath.Join(t.TempDir(), "sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	handler := (&server{db: db, pairCode: "pair-code-with-enough-entropy"}).routes()
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	tokenA := pairDevice(t, handler, "device-a", "Phone")
+	tokenB := pairDevice(t, handler, "device-b", "Tablet")
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/v1/notifications"
+	connection, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Authorization": []string{"Bearer " + tokenB}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	syncCall(t, handler, tokenA, syncRequest{ProtocolVersion: protocolVersion, DeviceID: "device-a", Operations: []operation{{
+		OperationID: "notify-a", EntityType: "money", EntityID: "entry-a", Revision: "2026-09-25T00:00:00.000Z-0000", DeviceID: "device-a", Payload: json.RawMessage(`{"id":"entry-a"}`),
+	}}}, http.StatusOK)
+	_ = connection.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var message map[string]string
+	if err := connection.ReadJSON(&message); err != nil {
+		t.Fatal(err)
+	}
+	if message["type"] != "changes_available" {
+		t.Fatalf("unexpected notification: %#v", message)
 	}
 }
 

@@ -130,7 +130,7 @@ import java.time.format.DateTimeFormatter
         item { SectionTitle("資料備份"); Button(export, Modifier.fillMaxWidth()) { Text("匯出資料與設定") }; OutlinedButton(import, Modifier.fillMaxWidth()) { Text("選擇備份檔還原") }; Text("備份包含記帳、課程、事項、訂閱、關鍵字與 App 設定。手機行事曆事件與日曆選擇僅留在本機，換機後需重新選擇。") }
             }
         }
-        item { Text("Simple App 3.1.0", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Simple App ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall) }
     }
 }
 

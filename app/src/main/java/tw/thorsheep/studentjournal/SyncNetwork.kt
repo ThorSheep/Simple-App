@@ -4,8 +4,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 
 data class SyncConnection(val serverUrl: String, val deviceId: String, val token: String) {
     fun validate() {
@@ -75,6 +80,25 @@ object SyncHttpClient {
             val raw = input?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (responseCode !in 200..299) throw IllegalStateException(JSONObject(raw).optString("error", "同步伺服器錯誤"))
             raw
+        }
+    }
+}
+
+/** Receives only a wake-up signal while the app is in the foreground. */
+object SyncNotifications {
+    fun listen(connection: SyncConnection, onChangesAvailable: () -> Unit): AutoCloseable {
+        connection.validate()
+        val address = connection.serverUrl.trimEnd('/').replaceFirst("https://", "wss://") + "/v1/notifications"
+        val client = OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS).build()
+        val socket = client.newWebSocket(Request.Builder().url(address).header("Authorization", "Bearer ${connection.token}").build(), object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (runCatching { JSONObject(text).optString("type") }.getOrNull() == "changes_available") onChangesAvailable()
+            }
+        })
+        return AutoCloseable {
+            socket.close(1000, "app backgrounded")
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
         }
     }
 }

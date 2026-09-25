@@ -11,10 +11,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	_ "modernc.org/sqlite"
 )
 
@@ -27,8 +30,61 @@ type config struct {
 }
 
 type server struct {
-	db       *sql.DB
-	pairCode string
+	db            *sql.DB
+	pairCode      string
+	notifications *notificationHub
+}
+
+// notificationHub only carries a wake-up signal. Clients still fetch changes
+// through /v1/sync, so the existing cursor and conflict rules remain central.
+type notificationHub struct {
+	mu      sync.Mutex
+	clients map[*websocket.Conn]string
+}
+
+var websocketUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		// Native Android clients do not send an Origin header. If one is present,
+		// only accept the server's own origin.
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		parsed, err := url.Parse(origin)
+		return err == nil && parsed.Scheme == "https" && parsed.Host == r.Host
+	},
+}
+
+func newNotificationHub() *notificationHub {
+	return &notificationHub{clients: make(map[*websocket.Conn]string)}
+}
+
+func (h *notificationHub) add(connection *websocket.Conn, deviceID string) {
+	h.mu.Lock()
+	h.clients[connection] = deviceID
+	h.mu.Unlock()
+}
+
+func (h *notificationHub) remove(connection *websocket.Conn) {
+	h.mu.Lock()
+	delete(h.clients, connection)
+	h.mu.Unlock()
+	_ = connection.Close()
+}
+
+func (h *notificationHub) notifyOthers(senderID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for connection, deviceID := range h.clients {
+		if deviceID == senderID {
+			continue
+		}
+		_ = connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := connection.WriteJSON(map[string]string{"type": "changes_available"}); err != nil {
+			delete(h.clients, connection)
+			_ = connection.Close()
+		}
+	}
 }
 
 type pairRequest struct {
@@ -83,7 +139,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	s := &server{db: db, pairCode: cfg.pairCode}
+	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub()}
 	log.Printf("Simple App sync server listening on %s", cfg.listenAddr)
 	log.Fatal(http.ListenAndServe(cfg.listenAddr, s.routes()))
 }
@@ -134,12 +190,35 @@ func openDatabase(path string) (*sql.DB, error) {
 }
 
 func (s *server) routes() http.Handler {
+	if s.notifications == nil {
+		s.notifications = newNotificationHub()
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /v1/pair", s.pair)
 	mux.HandleFunc("POST /v1/sync", s.sync)
+	mux.HandleFunc("GET /v1/notifications", s.notificationsEndpoint)
 	mux.HandleFunc("POST /v1/devices/revoke", s.revoke)
 	return limitBody(mux)
+}
+
+func (s *server) notificationsEndpoint(w http.ResponseWriter, r *http.Request) {
+	deviceID, ok := s.authenticate(r.Context(), r.Header.Get("Authorization"))
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	connection, err := websocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	s.notifications.add(connection, deviceID)
+	defer s.notifications.remove(connection)
+	for {
+		if _, _, err := connection.ReadMessage(); err != nil {
+			return
+		}
+	}
 }
 
 func limitBody(next http.Handler) http.Handler {
@@ -209,6 +288,7 @@ func (s *server) sync(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	accepted := make([]string, 0, len(request.Operations))
+	changed := false
 	for _, op := range request.Operations {
 		result, err := tx.ExecContext(r.Context(), `INSERT INTO changes(operation_id, entity_type, entity_id, revision, device_id, deleted, payload, created_at)
 			VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(operation_id) DO NOTHING`,
@@ -218,6 +298,7 @@ func (s *server) sync(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if count, _ := result.RowsAffected(); count > 0 {
+			changed = true
 			accepted = append(accepted, op.OperationID)
 		} else {
 			accepted = append(accepted, op.OperationID)
@@ -249,6 +330,9 @@ func (s *server) sync(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "database_unavailable")
 		return
+	}
+	if changed {
+		s.notifications.notifyOthers(deviceID)
 	}
 	writeJSON(w, http.StatusOK, response)
 }

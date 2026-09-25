@@ -57,9 +57,12 @@ v4 提供單一使用者、多裝置的離線優先同步。使用者自行部�
 | `GET /healthz` | 部署與健康檢查 |
 | `POST /v1/pair` | 以一次性配對碼註冊新裝置 |
 | `POST /v1/sync` | 推送 outbox 操作並依 cursor 拉取新操作 |
+| `GET /v1/notifications` | 前景 App 的 WebSocket 更新提示 |
 | `POST /v1/devices/revoke` | 撤銷遺失或不再使用的裝置 |
 
 `POST /v1/sync` 的請求包含協定版本、裝置 ID、上次 cursor 與操作陣列。回應包含伺服器已接受的操作 ID、新 cursor、遠端操作陣列與可顯示的錯誤碼。操作要有唯一 `operationId`，使重試具備冪等性。
+
+當伺服器接受新的操作時，會透過 `/v1/notifications` 對其他已連線的前景裝置送出 `changes_available` 訊號。訊號不包含資料內容；App 只顯示下拉重新整理提示，使用者手動同步時才依 cursor 下載變更。App 在背景或關閉時不維持 WebSocket，回到前景後會自動同步一次。資料修改後則會由 Android 的網路背景工作自動上傳，離線時保留在 outbox 並重試。
 
 ## 驗證與安全
 

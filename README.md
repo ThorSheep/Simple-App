@@ -27,7 +27,7 @@
 
 Debug APK 位於 `app/build/outputs/apk/debug/app-debug.apk`，僅供開發測試。Debug 與正式版使用不同套件識別碼和簽章，可同時安裝，資料彼此獨立。
 
-## 自託管同步（v4 開發中）
+## 自託管同步
 
 同步伺服器位於 [`server/`](server/)，可用 Docker Compose 搭配 Caddy 部署。先依照 [`server/README.md`](server/README.md) 設定 DNS、HTTPS 網域與一次性配對碼；確認 `https://你的網域/healthz` 回傳 `{"status":"ok"}` 後，在 App 的「設定 → 資料與版本」輸入伺服器網址及配對碼。
 

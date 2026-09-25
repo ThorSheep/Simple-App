@@ -11,8 +11,8 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40000
-        versionName = "4.0.0"
+        versionCode = 40100
+        versionName = "4.1.0"
     }
     buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
@@ -36,6 +36,7 @@ android {
 }
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.compose.material:material")
     implementation("androidx.activity:activity-compose:1.10.1")
