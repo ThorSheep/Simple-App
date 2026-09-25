@@ -2,6 +2,28 @@
 
 從 3.0.0 起記錄各版本的詳細變更，最新版本置於最上方。GitHub Release 提供簡短摘要及 APK；較早版本請參閱歷史 Release。
 
+## [4.0.0] — 2026-09-25
+
+### 自託管同步
+
+- 新增可自行部署的同步伺服器，使用 Docker Compose、Caddy HTTPS 與 SQLite。
+- App 可輸入自訂 HTTPS 伺服器網址與配對碼，為每台裝置建立獨立同步憑證。
+- 支援同步記帳、課程、上課時段、待辦、公告訂閱與公告關鍵字。
+- 支援離線優先同步；離線時先保留變更，恢復網路後再同步。
+- 同一筆資料在不同裝置修改時，使用最後修改優先規則處理。
+
+### 使用體驗與安全
+
+- 主要頁面支援下拉立即同步，不必每次進入設定頁。
+- 加入背景同步排程。
+- 伺服器只接受 HTTPS 連線；本機配對碼與伺服器設定不會提交到 Git。
+- 新增自託管部署說明、Docker 資料卷權限修正與同步錯誤修正。
+
+### 驗證
+
+- Android 單元測試、Lint、Debug APK 建置通過。
+- 已完成兩台裝置、校外 HTTPS 與伺服器重啟後的同步測試。
+
 ## [3.2.0] — 2026-09-14
 
 - 記帳新增「其他」分類，並依日期將交易分組，顯示日期、星期與每日淨額。
@@ -61,6 +83,7 @@
 - 測試涵蓋資料庫遷移、備份還原、課程刪除後保留事項、報告雙日期、關鍵字及通知去重。
 - 實機驗收步驟見 [3.0.0 測試清單](docs/3.0.0-testing.md)；長期背景排程仍受各手機系統行為影響。
 
+[4.0.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v4.0.0
 [3.2.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.2.0
 [3.1.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.1.0
 [3.0.0]: https://github.com/ThorSheep/Simple-App/releases/tag/v3.0.0
