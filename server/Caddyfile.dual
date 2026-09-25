@@ -1,0 +1,7 @@
+{$SYNC_DOMAIN} {
+    reverse_proxy sync:8080
+}
+
+{$SYNC_PROD_DOMAIN} {
+    reverse_proxy sync-prod:8080
+}

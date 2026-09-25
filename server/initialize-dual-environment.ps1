@@ -21,11 +21,15 @@ if ([string]::IsNullOrWhiteSpace($testDomain) -or [string]::IsNullOrWhiteSpace($
     throw "現有 .env 必須包含 SYNC_DOMAIN 與 PAIR_CODE。"
 }
 
-$productionPairCode = [guid]::NewGuid().ToString("N")
-@(
-    "SYNC_TEST_DOMAIN=$testDomain"
+$productionPairCode = $values["PROD_PAIR_CODE"]
+if ([string]::IsNullOrWhiteSpace($productionPairCode)) {
+    $productionPairCode = [guid]::NewGuid().ToString("N")
+}
+$original = Get-Content -LiteralPath $settingsPath | Where-Object { $_ -notmatch '^\s*(SYNC_PROD_DOMAIN|PROD_PAIR_CODE)=' }
+@($original) + @(
+    ""
+    "# 僅供 compose.dual.yaml 使用的正式環境設定。"
     "SYNC_PROD_DOMAIN=$ProductionDomain"
-    "TEST_PAIR_CODE=$testPairCode"
     "PROD_PAIR_CODE=$productionPairCode"
 ) | Set-Content -LiteralPath $settingsPath -Encoding utf8
 
