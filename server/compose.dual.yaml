@@ -15,8 +15,22 @@ services:
     environment:
       DATABASE_PATH: /data/sync.db
       PAIR_CODE: ${PROD_PAIR_CODE:?Set PROD_PAIR_CODE in .env}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_USER_ID: ${LINE_USER_ID:-}
+      REMINDER_TIMEZONE: ${REMINDER_TIMEZONE:-Asia/Taipei}
+      LINE_DAILY_SUMMARY_TIME: ${LINE_DAILY_SUMMARY_TIME:-07:00}
+      LINE_DUE_REMINDER_TIME: ${LINE_DUE_REMINDER_TIME:-09:00}
+      LINE_DUE_REMINDER_DAYS: ${LINE_DUE_REMINDER_DAYS:-3,1,0}
+      REMINDER_CHECK_INTERVAL: ${REMINDER_CHECK_INTERVAL:-5m}
     volumes:
       - sync-prod-data:/data
+
+  # The base compose file represents the test environment in dual mode. Never
+  # allow test data to generate real LINE notifications.
+  sync:
+    environment:
+      LINE_CHANNEL_ACCESS_TOKEN: ""
+      LINE_USER_ID: ""
 
   caddy:
     depends_on:

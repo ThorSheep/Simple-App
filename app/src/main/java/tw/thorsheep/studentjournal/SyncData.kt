@@ -67,6 +67,19 @@ interface SyncDao {
     @Query("SELECT * FROM sync_state WHERE id = :id")
     suspend fun state(id: String = SyncState.SINGLETON_ID): SyncState?
     @Upsert suspend fun saveState(state: SyncState)
+    @Query("DELETE FROM sync_metadata")
+    suspend fun clearMetadata()
+    @Query("DELETE FROM sync_outbox")
+    suspend fun clearOutbox()
+    @Query("DELETE FROM sync_state")
+    suspend fun clearState()
+
+    /** Clears only server-specific transport state before pairing a different server. */
+    suspend fun resetForNewServer() {
+        clearMetadata()
+        clearOutbox()
+        clearState()
+    }
 }
 
 val MIGRATION_5_6 = object : Migration(5, 6) {

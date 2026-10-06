@@ -78,12 +78,12 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable fun SettingsV3(options: AppOptions, update: UpdateState, save: (AppOptions) -> Unit, export: () -> Unit, import: () -> Unit,
+@Composable fun SettingsV3(options: AppOptions, reminders: LineReminderSettings, update: UpdateState, save: (AppOptions) -> Unit, saveReminders: (LineReminderSettings) -> Unit, export: () -> Unit, import: () -> Unit,
     checkUpdate: () -> Unit, downloadUpdate: (AppRelease) -> Unit, installUpdate: (AppRelease, java.io.File) -> Unit,
     selectedSection: String, selectSection: (String) -> Unit, syncConnection: SyncConnection?, syncInfo: String,
     pairSync: (String, String) -> Unit, runSync: () -> Unit, disconnectSync: () -> Unit) {
     PageList {
-        item { SectionTitle("設定"); CategoryTabs(selectedSection, listOf("interface" to "介面", "data" to "資料與版本"), selectSection) }
+        item { SectionTitle("設定"); CategoryTabs(selectedSection, listOf("interface" to "介面", "reminders" to "LINE 提醒", "data" to "資料與版本"), selectSection) }
         when (selectedSection) {
             "interface" -> {
                 item { SectionTitle("底部常用功能"); Text("可自由選擇、排序與設定首頁位置，最多四項。") }
@@ -97,6 +97,23 @@ import java.time.format.DateTimeFormatter
                     Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Box(Modifier.weight(1f)) { ToggleRow(name, id in options.homeSections) { checked -> if (checked) save(options.copy(homeSections = options.homeSections + id)) else save(options.copy(homeSections = options.homeSections - id)) } }; val index = options.homeSections.indexOf(id); if (index >= 0) { TextButton({ save(options.copy(homeSections = options.homeSections.move(index, index - 1))) }, enabled = index > 0) { Text("↑") }; TextButton({ save(options.copy(homeSections = options.homeSections.move(index, index + 1))) }, enabled = index < options.homeSections.lastIndex) { Text("↓") } } }
                 }
                 item { SectionTitle("外觀"); Choice("主題", options.theme, listOf("system" to "跟隨系統", "light" to "淺色", "dark" to "深色")) { save(options.copy(theme = it)) } }
+            }
+            "reminders" -> {
+                item { SectionTitle("LINE 個人提醒")
+                    ToggleRow("啟用 LINE 通知", reminders.enabled) { saveReminders(reminders.copy(enabled = it)) }
+                    Text("LINE Token 僅保存在你的自託管伺服器，不會儲存在 App 或同步到其他裝置。")
+                }
+                if (reminders.enabled) {
+                    item { SectionTitle("每日摘要"); ToggleRow("傳送每日摘要", reminders.dailySummary) { saveReminders(reminders.copy(dailySummary = it)) }
+                        if (reminders.dailySummary) PickTime("摘要發送時間", reminders.dailyTime) { saveReminders(reminders.copy(dailyTime = it)) }
+                        ToggleRow("包含今日課程", reminders.includeCourses) { saveReminders(reminders.copy(includeCourses = it)) }
+                        ToggleRow("包含今日到期事項", reminders.includeToday) { saveReminders(reminders.copy(includeToday = it)) }
+                        ToggleRow("包含明日到期事項", reminders.includeTomorrow) { saveReminders(reminders.copy(includeTomorrow = it)) }
+                    }
+                    item { SectionTitle("到期提醒"); PickTime("提醒發送時間", reminders.dueTime) { saveReminders(reminders.copy(dueTime = it)) }
+                        reminderDays.forEach { days -> ToggleRow(if (days == 0) "到期當天" else "到期前 $days 天", days in reminders.dueDays) { checked -> saveReminders(reminders.copy(dueDays = if (checked) (reminders.dueDays + days).distinct().sortedDescending() else reminders.dueDays - days)) } }
+                    }
+                }
             }
             else -> {
                 item { SectionTitle("自託管同步")
@@ -133,6 +150,7 @@ import java.time.format.DateTimeFormatter
         item { Text("Simple App ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall) }
     }
 }
+
 
 @Composable private fun CategoryTabs(selected: String, choices: List<Pair<String, String>>, choose: (String) -> Unit) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
     choices.forEach { (id, label) -> FilterChip(selected = selected == id, onClick = { choose(id) }, label = { Text(label) }, modifier = Modifier.weight(1f)) }

@@ -38,6 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.*
 
@@ -62,7 +64,9 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var page by rememberSaveable { mutableStateOf("home") }
     var month by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     var options by remember { mutableStateOf(AppOptions.read(context)) }
+    var lineReminders by remember { mutableStateOf(LineReminderSettings.read(context)) }
     val snack = remember { SnackbarHostState() }; val scope = rememberCoroutineScope()
+    val reminderSettingsMutex = remember { Mutex() }
     var busy by remember { mutableStateOf(false) }
     var courseEdit by remember { mutableStateOf<Course?>(null) }
     var itemEdit by remember { mutableStateOf<AcademicItem?>(null) }
@@ -76,8 +80,22 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(uploadAfter: Boolean = false, action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action(); if (uploadAfter && syncConnection != null) SyncWorker.uploadNow(context) } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message?.takeIf { it.isNotBlank() } ?: "同步操作失敗（${e.javaClass.simpleName}）") } finally { busy = false } } }
-    fun synchronize(connection: SyncConnection) = work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); changesAvailable = false; syncInfo = "同步完成：收到 ${result.changes.size} 筆變更"; message(syncInfo) }
+    fun synchronize(connection: SyncConnection) = work { val result = SyncEngine(context, db, connection.deviceId).synchronize(connection); lineReminders = LineReminderSettings.read(context); changesAvailable = false; syncInfo = "同步完成：收到 ${result.changes.size} 筆變更"; message(syncInfo) }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
+    fun saveLineReminders(value: LineReminderSettings) {
+        lineReminders = value
+        scope.launch {
+            reminderSettingsMutex.withLock {
+                val latest = lineReminders
+                val connection = syncConnection
+                if (connection == null) latest.persist(context)
+                else {
+                    SyncPreferencesRepository(context, db, connection.deviceId).saveLineReminders(latest)
+                    SyncWorker.uploadNow(context)
+                }
+            }
+        }
+    }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
     LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -94,7 +112,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                     }
                 }
             }
-            work { val result = SyncEngine(db, connection.deviceId).synchronize(connection); syncInfo = "已自動同步：收到 ${result.changes.size} 筆變更" }
+            work { val result = SyncEngine(context, db, connection.deviceId).synchronize(connection); lineReminders = LineReminderSettings.read(context); syncInfo = "已自動同步：收到 ${result.changes.size} 筆變更" }
         }
         fun stopForegroundSync() { notifications?.close(); notifications = null }
         val observer = LifecycleEventObserver { _, event ->
@@ -140,15 +158,15 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                     "course" -> CoursePage(courses, meetings, tasks, { courseEdit = it }, { deletion = "course" to it.id }, { itemEdit = AcademicItem(title = "", courseId = it) }, { itemEdit = it }, { item, done -> work(uploadAfter = true) { val c = syncConnection; if (c == null) db.academic().saveItem(item.copy(done = done)) else SyncAcademicRepository(db, c.deviceId).saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "task" -> TaskPage(courses, tasks, { itemEdit = it }, { item, done -> work(uploadAfter = true) { val c = syncConnection; if (c == null) db.academic().saveItem(item.copy(done = done)) else SyncAcademicRepository(db, c.deviceId).saveItem(item.copy(done = done)) } }, { deletion = "task" to it.id })
                     "agenda" -> AgendaPage(courses, meetings, tasks)
-                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, options, { id, enabled -> work(uploadAfter = true) { val c = syncConnection; if (enabled) { if (c == null) db.subscriptions().save(Subscription(id)) else SyncPreferencesRepository(db, c.deviceId).save(Subscription(id)) } else if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(db, c.deviceId).deleteSubscription(id) } }, { source -> work(uploadAfter = true) { val c = syncConnection; listOf(source.id) + source.categories.map { "${source.id}#$it" }.forEach { id -> if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(db, c.deviceId).deleteSubscription(id) } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, ::saveOptions, { enabled -> if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS) else saveOptions(options.copy(notify = enabled)) }, { word -> work(uploadAfter = true) { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; val c = syncConnection; if (c == null) db.automation().save(word) else SyncPreferencesRepository(db, c.deviceId).save(word) } }, { word -> work(uploadAfter = true) { val c = syncConnection; if (c == null) db.automation().delete(word.id) else SyncPreferencesRepository(db, c.deviceId).deleteKeyword(word.id) } })
+                    "announcements" -> NewsPage(sources, visibleNews, selectedSubs, keywords, options, { id, enabled -> work(uploadAfter = true) { val c = syncConnection; if (enabled) { if (c == null) db.subscriptions().save(Subscription(id)) else SyncPreferencesRepository(context, db, c.deviceId).save(Subscription(id)) } else if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(context, db, c.deviceId).deleteSubscription(id) } }, { source -> work(uploadAfter = true) { val c = syncConnection; listOf(source.id) + source.categories.map { "${source.id}#$it" }.forEach { id -> if (c == null) db.subscriptions().delete(id) else SyncPreferencesRepository(context, db, c.deviceId).deleteSubscription(id) } } }, { targets -> work { message(AnnouncementUpdates.update(context, targets)) } }, { a -> work { db.announcements().markRead(a.id); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url))) } }, ::saveOptions, { enabled -> if (enabled && Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS) else saveOptions(options.copy(notify = enabled)) }, { word -> work(uploadAfter = true) { require(word.text.isNotBlank() && word.text.length <= 100) { "關鍵字須為 1～100 字" }; val c = syncConnection; if (c == null) db.automation().save(word) else SyncPreferencesRepository(context, db, c.deviceId).save(word) } }, { word -> work(uploadAfter = true) { val c = syncConnection; if (c == null) db.automation().delete(word.id) else SyncPreferencesRepository(context, db, c.deviceId).deleteKeyword(word.id) } })
                     else -> SettingsV3(
-                        options = options, update = updateState, save = ::saveOptions,
+                        options = options, reminders = lineReminders, update = updateState, save = ::saveOptions, saveReminders = ::saveLineReminders,
                         export = { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, import = { import.launch(arrayOf("application/json", "text/plain")) },
                         checkUpdate = { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } },
                         downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
                         selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
-                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); val connection = syncConnection ?: error("無法保存同步設定"); SyncMoneyRepository(db, connection.deviceId).bootstrap(); SyncAcademicRepository(db, connection.deviceId).bootstrap(); SyncPreferencesRepository(db, connection.deviceId).bootstrap(); val result = SyncEngine(db, connection.deviceId).synchronize(connection); SyncWorker.schedule(context); syncInfo = "配對完成：同步 ${result.changes.size} 筆變更" } },
+                        pairSync = { url, code -> work { val token = SyncHttpClient.pair(url, code, SyncSettings.deviceId(context), "Android" ); SyncSettings.save(context, url, token); syncConnection = SyncSettings.connection(context); val connection = syncConnection ?: error("無法保存同步設定"); db.sync().resetForNewServer(); SyncMoneyRepository(db, connection.deviceId).bootstrap(); SyncAcademicRepository(db, connection.deviceId).bootstrap(); SyncPreferencesRepository(context, db, connection.deviceId).bootstrap(); val result = SyncEngine(context, db, connection.deviceId).synchronize(connection); SyncWorker.schedule(context); syncInfo = "配對完成：同步 ${result.changes.size} 筆變更" } },
                         runSync = { syncConnection?.let(::synchronize) },
                         disconnectSync = { SyncSettings.clear(context); SyncWorker.cancel(context); syncConnection = null; syncInfo = "已中斷同步" }
                     )

@@ -24,9 +24,16 @@ import (
 const protocolVersion = 1
 
 type config struct {
-	listenAddr string
-	database   string
-	pairCode   string
+	listenAddr         string
+	database           string
+	pairCode           string
+	lineAccessToken    string
+	lineUserID         string
+	reminderTimezone   string
+	dailySummaryTime   string
+	dueReminderTime    string
+	dueReminderDays    string
+	reminderCheckEvery string
 }
 
 type server struct {
@@ -127,9 +134,16 @@ type syncResponse struct {
 
 func main() {
 	cfg := config{
-		listenAddr: value("LISTEN_ADDR", ":8080"),
-		database:   value("DATABASE_PATH", "/data/sync.db"),
-		pairCode:   os.Getenv("PAIR_CODE"),
+		listenAddr:         value("LISTEN_ADDR", ":8080"),
+		database:           value("DATABASE_PATH", "/data/sync.db"),
+		pairCode:           os.Getenv("PAIR_CODE"),
+		lineAccessToken:    os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"),
+		lineUserID:         os.Getenv("LINE_USER_ID"),
+		reminderTimezone:   value("REMINDER_TIMEZONE", "Asia/Taipei"),
+		dailySummaryTime:   value("LINE_DAILY_SUMMARY_TIME", "07:00"),
+		dueReminderTime:    value("LINE_DUE_REMINDER_TIME", "09:00"),
+		dueReminderDays:    value("LINE_DUE_REMINDER_DAYS", "3,1,0"),
+		reminderCheckEvery: value("REMINDER_CHECK_INTERVAL", "5m"),
 	}
 	if len(cfg.pairCode) < 16 {
 		log.Fatal("PAIR_CODE must contain at least 16 characters")
@@ -140,6 +154,24 @@ func main() {
 	}
 	defer db.Close()
 	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub()}
+	reminders, err := newReminderService(db, reminderConfig{
+		accessToken: cfg.lineAccessToken,
+		userID:      cfg.lineUserID,
+		timezone:    cfg.reminderTimezone,
+		dailyTime:   cfg.dailySummaryTime,
+		dueTime:     cfg.dueReminderTime,
+		dueDays:     cfg.dueReminderDays,
+		interval:    cfg.reminderCheckEvery,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if reminders.enabled() {
+		go reminders.runLoop(context.Background())
+		log.Printf("LINE reminders enabled for the configured personal account")
+	} else {
+		log.Printf("LINE reminders disabled; set both LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID to enable them")
+	}
 	log.Printf("Simple App sync server listening on %s", cfg.listenAddr)
 	log.Fatal(http.ListenAndServe(cfg.listenAddr, s.routes()))
 }
@@ -181,6 +213,10 @@ func openDatabase(path string) (*sql.DB, error) {
 			FOREIGN KEY(device_id) REFERENCES devices(id)
 		);
 		CREATE INDEX IF NOT EXISTS changes_seq ON changes(seq);
+		CREATE TABLE IF NOT EXISTS reminder_deliveries (
+			id TEXT PRIMARY KEY,
+			sent_at INTEGER NOT NULL
+		);
 	`)
 	if err != nil {
 		db.Close()

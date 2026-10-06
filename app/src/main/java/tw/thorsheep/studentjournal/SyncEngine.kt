@@ -1,8 +1,10 @@
 package tw.thorsheep.studentjournal
 
+import android.content.Context
 import androidx.room.withTransaction
 
 class SyncEngine(
+    private val context: Context,
     private val db: JournalDb,
     private val deviceId: String,
     private val send: suspend (SyncConnection, Long, List<SyncOutbox>) -> SyncResult = SyncHttpClient::sync
@@ -14,7 +16,7 @@ class SyncEngine(
         val result = send(connection, state.cursor, pending)
         db.withTransaction {
             if (result.acceptedOperationIds.isNotEmpty()) db.sync().acknowledge(result.acceptedOperationIds)
-            val money = SyncMoneyRepository(db, deviceId); val academic = SyncAcademicRepository(db, deviceId); val preferences = SyncPreferencesRepository(db, deviceId)
+            val money = SyncMoneyRepository(db, deviceId); val academic = SyncAcademicRepository(db, deviceId); val preferences = SyncPreferencesRepository(context, db, deviceId)
             result.changes.sortedWith(compareBy<RemoteSyncChange> { when (it.operation.entityType) { "course" -> 0; "courseMeeting" -> 1; "academicItem" -> 2; else -> 3 } }.thenBy { it.cursor }).forEach { change ->
                 if (!academic.apply(change) && !money.apply(change)) preferences.apply(change)
             }

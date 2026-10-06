@@ -17,10 +17,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val connection = SyncSettings.connection(applicationContext) ?: return Result.success()
         return try {
-            SyncEngine(JournalDb.get(applicationContext), connection.deviceId).synchronize(connection)
+            SyncEngine(applicationContext, JournalDb.get(applicationContext), connection.deviceId).synchronize(connection)
             Result.success()
         } catch (e: Exception) {
-            SyncEngine(JournalDb.get(applicationContext), connection.deviceId).recordFailure(e.message ?: "同步失敗")
+            SyncEngine(applicationContext, JournalDb.get(applicationContext), connection.deviceId).recordFailure(e.message ?: "同步失敗")
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
