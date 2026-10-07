@@ -11,6 +11,22 @@ class SyncEngine(
 ) {
     suspend fun synchronize(connection: SyncConnection): SyncResult {
         require(connection.deviceId == deviceId) { "同步裝置不符" }
+        val first = exchange(connection)
+        // A newly added preference (such as LINE reminders) has no local metadata on
+        // an already-paired device. Pull first so a server value wins, then register
+        // only settings that genuinely do not exist on either side.
+        SyncPreferencesRepository(context, db, deviceId).bootstrap()
+        val pendingAfterBootstrap = db.sync().pending()
+        if (pendingAfterBootstrap.isEmpty()) return first
+        val second = exchange(connection)
+        return SyncResult(
+            acceptedOperationIds = (first.acceptedOperationIds + second.acceptedOperationIds).distinct(),
+            cursor = second.cursor,
+            changes = first.changes + second.changes
+        )
+    }
+
+    private suspend fun exchange(connection: SyncConnection): SyncResult {
         val state = db.sync().state() ?: SyncState()
         val pending = db.sync().pending()
         val result = send(connection, state.cursor, pending)

@@ -74,12 +74,22 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
     var deletion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var archive by remember { mutableStateOf<ArchiveV4?>(null) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var updateCheckRunning by remember { mutableStateOf(false) }
+    var dismissedUpdateTag by rememberSaveable { mutableStateOf("") }
     var syncConnection by remember { mutableStateOf(SyncSettings.connection(context)) }
     var syncInfo by remember { mutableStateOf("") }
     var changesAvailable by remember { mutableStateOf(false) }
     var settingsSection by rememberSaveable { mutableStateOf("interface") }
     fun message(text: String) { scope.launch { snack.showSnackbar(text) } }
     fun work(uploadAfter: Boolean = false, action: suspend () -> Unit) { if (!busy) scope.launch { busy = true; try { action(); if (uploadAfter && syncConnection != null) SyncWorker.uploadNow(context) } catch (e: CancellationException) { throw e } catch (e: Exception) { message(e.message?.takeIf { it.isNotBlank() } ?: "同步操作失敗（${e.javaClass.simpleName}）") } finally { busy = false } } }
+    fun checkForUpdate() {
+        if (updateCheckRunning) return
+        scope.launch {
+            updateCheckRunning = true
+            updateState = UpdateState.Checking
+            try { updateState = AppUpdates.latest(context) } finally { updateCheckRunning = false }
+        }
+    }
     fun synchronize(connection: SyncConnection) = work { val result = SyncEngine(context, db, connection.deviceId).synchronize(connection); lineReminders = LineReminderSettings.read(context); changesAvailable = false; syncInfo = "同步完成：收到 ${result.changes.size} 筆變更"; message(syncInfo) }
     fun saveOptions(value: AppOptions) { options = value; value.persist(context); onThemeChanged(value.theme) }
     fun saveLineReminders(value: LineReminderSettings) {
@@ -97,11 +107,12 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
         }
     }
     val noticePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed -> saveOptions(options.copy(notify = allowed)); if (!allowed) message("通知未啟用，公告仍會醒目顯示") }
-    LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) updateState = AppUpdates.latest(context) }
+    LaunchedEffect(Unit) { AppOptions.schedule(context); if (options.checkAppUpdates) checkForUpdate() }
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, syncConnection) {
+    DisposableEffect(lifecycleOwner, syncConnection, options.checkAppUpdates) {
         var notifications: AutoCloseable? = null
         fun startForegroundSync() {
+            if (options.checkAppUpdates) checkForUpdate()
             val connection = syncConnection ?: return
             notifications?.close()
             notifications = SyncNotifications.listen(connection) {
@@ -150,7 +161,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
             }) { Icon(Icons.Outlined.Add, "新增") } }) { padding ->
             val swipePages = options.quick.filter { it in pagesV3 }.toMutableList().also { it.add(options.homePosition.coerceIn(0, options.quick.size), "home") }
             var drag by remember(page, swipePages, options.swipeNavigation) { mutableFloatStateOf(0f) }
-            val pullRefresh = rememberPullRefreshState(busy, { syncConnection?.let(::synchronize) ?: message("尚未設定同步伺服器") })
+            val pullRefresh = rememberPullRefreshState(busy, { syncConnection?.let(::synchronize) ?: message("尚未設定同步伺服器"); checkForUpdate() })
             Box(Modifier.padding(padding).fillMaxSize().pullRefresh(pullRefresh).then(if (options.swipeNavigation && page in swipePages) Modifier.pointerInput(page, swipePages) { detectHorizontalDragGestures(onHorizontalDrag = { _, amount -> drag += amount }, onDragEnd = { val index = swipePages.indexOf(page); val next = when { drag > 110 && index > 0 -> swipePages[index - 1]; drag < -110 && index < swipePages.lastIndex -> swipePages[index + 1]; else -> null }; if (next != null) page = next; drag = 0f }, onDragCancel = { drag = 0f }) } else Modifier)) {
                 when (page) {
                     "home" -> HomeV3(money, courses, meetings, tasks, visibleNews, keywords, sources, options) { page = it }
@@ -162,7 +173,7 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                     else -> SettingsV3(
                         options = options, reminders = lineReminders, update = updateState, save = ::saveOptions, saveReminders = ::saveLineReminders,
                         export = { export.launch("simple-app-${LocalDateTime.now().toString().replace(':', '-')}.json") }, import = { import.launch(arrayOf("application/json", "text/plain")) },
-                        checkUpdate = { work { updateState = UpdateState.Checking; updateState = AppUpdates.latest(context) } },
+                        checkUpdate = ::checkForUpdate,
                         downloadUpdate = { release -> work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許安裝後，回到這裡按「安裝已下載版本」") } },
                         installUpdate = { _, file -> if (!AppUpdates.install(context, file)) message("請先允許此 App 安裝更新") },
                         selectedSection = settingsSection, selectSection = { settingsSection = it }, syncConnection = syncConnection, syncInfo = syncInfo,
@@ -175,6 +186,12 @@ private fun pageIcon(page: String) = when (page) { "money" -> Icons.Outlined.Acc
                 PullRefreshIndicator(busy, pullRefresh, Modifier.align(Alignment.TopCenter))
             }
         }
+    }
+    (updateState as? UpdateState.Available)?.release?.takeIf { it.tag != dismissedUpdateTag }?.let { release ->
+        AlertDialog(onDismissRequest = { dismissedUpdateTag = release.tag }, title = { Text("發現新版本 ${release.tag}") },
+            text = { Text(release.notes.lineSequence().take(5).joinToString("\n").ifBlank { "已有較新的正式版本可安裝。" }) },
+            confirmButton = { Button({ work { updateState = UpdateState.Downloading(release); val file = AppUpdates.download(context, release).getOrElse { throw it }; updateState = UpdateState.Ready(release, file); if (!AppUpdates.install(context, file)) message("請在系統設定允許此 App 安裝更新後，再回來安裝") } }) { Text("下載並更新") } },
+            dismissButton = { TextButton({ dismissedUpdateTag = release.tag }) { Text("稍後") } })
     }
     courseEdit?.let { c -> CourseDialog(c, meetings.filter { it.courseId == c.id }.ifEmpty { if (c.title.isBlank()) listOf(CourseMeeting(courseId = c.id, day = LocalDate.now().dayOfWeek.value)) else emptyList() }, { courseEdit = null }) { course, times -> work(uploadAfter = true) { val x = syncConnection; if (x == null) db.academic().save(course, times) else SyncAcademicRepository(db, x.deviceId).saveCourse(course, times); courseEdit = null } } }
     itemEdit?.let { ItemDialog(it, courses, { itemEdit = null }) { item -> work(uploadAfter = true) { val x = syncConnection; if (x == null) db.academic().saveItem(item) else SyncAcademicRepository(db, x.deviceId).saveItem(item); itemEdit = null } } }

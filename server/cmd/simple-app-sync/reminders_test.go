@@ -31,7 +31,7 @@ func TestReminderServiceSendsDailySummaryAndDueReminderOnce(t *testing.T) {
 	}
 	insertReminderChange(t, db, "course", "course-1", `{"id":"course-1","title":"軟體工程","archived":false}`)
 	insertReminderChange(t, db, "courseMeeting", "meeting-1", `{"id":"meeting-1","courseId":"course-1","day":`+strconv.Itoa(weekday)+`,"start":"09:00","end":"10:00","room":"A101"}`)
-	insertReminderChange(t, db, "academicItem", "item-1", `{"id":"item-1","title":"期末報告","kind":"報告","date":"2026-10-06","time":"23:59","presentationDate":"","presentationTime":"","done":false}`)
+	insertReminderChange(t, db, "academicItem", "item-1", `{"id":"item-1","title":"期末報告","courseId":"course-1","kind":"報告","date":"2026-10-06","time":"23:59","presentationDate":"","presentationTime":"","done":false}`)
 	insertReminderChange(t, db, "lineReminderSettings", "personal", `{"enabled":true,"dailySummary":true,"dailyTime":"07:00","includeCourses":true,"includeToday":true,"includeTomorrow":true,"dueTime":"09:00","dueDays":[3,1,0]}`)
 
 	service, err := newReminderService(db, reminderConfig{
@@ -49,10 +49,10 @@ func TestReminderServiceSendsDailySummaryAndDueReminderOnce(t *testing.T) {
 	if len(messages) != 2 {
 		t.Fatalf("expected a daily summary and a due reminder, got %d: %#v", len(messages), messages)
 	}
-	if !strings.Contains(messages[0], "軟體工程") || !strings.Contains(messages[0], "期末報告") {
+	if !strings.Contains(messages[0], "09:00 軟體工程（A101）") || !strings.Contains(messages[0], "【軟體工程】報告：期末報告 23:59") {
 		t.Fatalf("daily summary is missing synced data: %q", messages[0])
 	}
-	if !strings.Contains(messages[1], "到期提醒") || !strings.Contains(messages[1], "期末報告") {
+	if !strings.Contains(messages[1], "到期提醒") || !strings.Contains(messages[1], "課程：軟體工程") || !strings.Contains(messages[1], "期末報告") {
 		t.Fatalf("unexpected due reminder: %q", messages[1])
 	}
 	service.runOnce(context.Background(), now.Add(10*time.Minute))
