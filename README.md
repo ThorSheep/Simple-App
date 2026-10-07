@@ -16,6 +16,7 @@
 - 可選擇底部導覽、首頁位置、左右滑動切換及系統／淺色／深色主題。
 - 支援 JSON 匯出與匯入；備份包含 App 資料與設定，不包含手機行事曆事件或日曆選擇。
 - 正式版可檢查 GitHub Release、下載新版 APK，並交由 Android 系統驗證簽章與確認安裝。
+- 可透過 Chrome／Edge 的 ee-class 作業匯入擴充功能，手動選取中央 ee-class 作業並同步為待辦；不會保存 Portal 帳密或 Cookie。
 
 ## 建置
 
@@ -32,6 +33,10 @@ Debug APK 位於 `app/build/outputs/apk/debug/app-debug.apk`，僅供開發測�
 同步伺服器位於 [`server/`](server/)，可用 Docker Compose 搭配 Caddy 部署。先依照 [`server/README.md`](server/README.md) 設定 DNS、HTTPS 網域與一次性配對碼；確認 `https://你的網域/healthz` 回傳 `{"status":"ok"}` 後，在 App 的「設定 → 資料與版本」輸入伺服器網址及配對碼。
 
 首次配對會同步現有收支、課程、上課時段、待辦、公告訂閱與關鍵字。手機行事曆、公告快取、已讀狀態、通知與外觀偏好維持裝置本機。同步採離線優先；在兩台裝置同時修改同一筆資料時，使用最後修改優先規則。自託管同步仍應保留 JSON 匯出備份。
+
+## ee-class 作業匯入
+
+Chrome／Edge 擴充功能位於 [`extensions/eeclass-importer/`](extensions/eeclass-importer/)。它只讀取你已登入後開啟的中央 ee-class 課程作業清單；匯入前會讓你勾選作業、選擇要關聯的 Simple App 課程，並可永久略過不需要的作業。課程對應會記在瀏覽器中，作業預設是重要事項；重複匯入會更新同一筆待辦並顯示新增／更新數量，待辦也可直接開啟 ee-class 原始作業頁。詳細安裝、配對與安全說明請參閱 [擴充功能 README](extensions/eeclass-importer/README.md)。
 
 ## 發布正式版
 

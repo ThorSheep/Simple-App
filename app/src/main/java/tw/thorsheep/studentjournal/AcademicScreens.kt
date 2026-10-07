@@ -27,7 +27,8 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
 @Composable fun ToggleRow(title: String, checked: Boolean, change: (Boolean) -> Unit) = Row(Modifier.fillMaxWidth().clickable { change(!checked) }, verticalAlignment = Alignment.CenterVertically) {
     Checkbox(checked, change); Text(title, Modifier.weight(1f))
 }
-@Composable fun AcademicCard(item: AcademicItem, courses: List<Course>, edit: () -> Unit, check: (Boolean) -> Unit, delete: () -> Unit) {
+private fun eeClassHomeworkUrl(note: String): String? = Regex("""https://ncueeclass\.ncu\.edu\.tw/course/homework/\d+""").find(note)?.value
+@Composable fun AcademicCard(item: AcademicItem, courses: List<Course>, edit: () -> Unit, check: (Boolean) -> Unit, delete: () -> Unit, openLink: (String) -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = edit)) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(item.done, check)
         Column(Modifier.weight(1f)) {
@@ -37,6 +38,7 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
             if (!item.done && item.date.isNotBlank() && LocalDate.parse(item.date) < LocalDate.now()) Text("已逾期", color = MaterialTheme.colorScheme.error)
             if (item.kind == "報告" && item.presentationDate.isNotBlank()) Text("報告：${item.presentationDate} ${item.presentationTime}")
             if (item.grouped) Text("分組：${item.groupNote.ifBlank { "尚未填寫組別" }}")
+            eeClassHomeworkUrl(item.note)?.let { url -> TextButton({ openLink(url) }) { Text("開啟 ee-class 作業") } }
         }
         TextButton(delete) { Text("刪除") }
     } }
@@ -44,7 +46,7 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
 
 @Composable fun CoursePage(courses: List<Course>, meetings: List<CourseMeeting>, tasks: List<AcademicItem>,
     editCourse: (Course) -> Unit, deleteCourse: (Course) -> Unit, newItem: (String) -> Unit,
-    editItem: (AcademicItem) -> Unit, checkItem: (AcademicItem, Boolean) -> Unit, deleteItem: (AcademicItem) -> Unit) {
+    editItem: (AcademicItem) -> Unit, checkItem: (AcademicItem, Boolean) -> Unit, deleteItem: (AcademicItem) -> Unit, openLink: (String) -> Unit) {
     var tab by rememberSaveable { mutableStateOf("table") }
     var day by rememberSaveable { mutableIntStateOf(LocalDate.now().dayOfWeek.value) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -59,7 +61,7 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
             item { SectionTitle("課程事項"); Button({ newItem(current.id) }) { Text("新增作業、報告或考試") } }
             val list = tasks.filter { it.courseId == current.id }.sortedWith(compareBy<AcademicItem> { it.done }.thenBy { it.date.ifBlank { "9999" } })
             if (list.isEmpty()) item { Text("尚無課程事項") }
-            items(list, key = { it.id }) { AcademicCard(it, courses, { editItem(it) }, { value -> checkItem(it, value) }, { deleteItem(it) }) }
+            items(list, key = { it.id }) { AcademicCard(it, courses, { editItem(it) }, { value -> checkItem(it, value) }, { deleteItem(it) }, openLink) }
         } else if (tab == "table") {
             item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { weekNames.forEachIndexed { index, name -> FilterChip(day == index + 1, { day = index + 1 }, { Text(name) }) } } }
             val active = courses.filter { !it.archived }.associateBy { it.id }
@@ -84,7 +86,7 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
     }
 }
 
-@Composable fun TaskPage(courses: List<Course>, items: List<AcademicItem>, edit: (AcademicItem) -> Unit, check: (AcademicItem, Boolean) -> Unit, delete: (AcademicItem) -> Unit) {
+@Composable fun TaskPage(courses: List<Course>, items: List<AcademicItem>, edit: (AcademicItem) -> Unit, check: (AcademicItem, Boolean) -> Unit, delete: (AcademicItem) -> Unit, openLink: (String) -> Unit) {
     var course by rememberSaveable { mutableStateOf("all") }; var kind by rememberSaveable { mutableStateOf("all") }; var status by rememberSaveable { mutableStateOf("all") }
     PageList {
         item { SectionTitle("我的待辦"); Choice("課程", course, listOf("all" to "全部", "" to "未關聯課程") + courses.map { it.id to it.title }) { course = it }
@@ -92,7 +94,7 @@ val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
             Choice("狀態", status, listOf("all" to "全部", "open" to "未完成", "done" to "已完成")) { status = it } }
         val list = items.filter { (course == "all" || it.courseId.orEmpty() == course) && (kind == "all" || it.kind == kind) && (status == "all" || it.done == (status == "done")) }.sortedWith(compareBy<AcademicItem> { it.done }.thenBy { it.date.ifBlank { "9999" } }.thenBy { it.time })
         if (list.isEmpty()) item { Text("沒有符合條件的事項") }
-        items(list, key = { it.id }) { AcademicCard(it, courses, { edit(it) }, { value -> check(it, value) }, { delete(it) }) }
+        items(list, key = { it.id }) { AcademicCard(it, courses, { edit(it) }, { value -> check(it, value) }, { delete(it) }, openLink) }
     }
 }
 

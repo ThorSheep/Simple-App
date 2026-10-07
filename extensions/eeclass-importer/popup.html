@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ee-class 作業匯入</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>ee-class 作業匯入</h1>
+    <p id="status" class="status">正在讀取…</p>
+    <section id="pairing" hidden>
+      <h2>連接同步伺服器</h2>
+      <label>伺服器網址<input id="server-url" type="url" placeholder="https://your-server.example"></label>
+      <label>配對碼<input id="pair-code" type="password" autocomplete="off" placeholder="只在首次配對使用"></label>
+      <button id="pair" type="button">配對此瀏覽器</button>
+    </section>
+    <section id="import-panel" hidden>
+      <h2 id="course-heading">作業</h2>
+      <label>匯入到 Simple App 課程<select id="course-map"><option value="">未關聯課程</option></select></label>
+      <p class="hint">選擇後會記住這門 ee-class 課程的對應關係。</p>
+      <div id="assignments"></div>
+      <button id="import" type="button">匯入已選取作業</button>
+    </section>
+    <details id="ignored-panel">
+      <summary>已永久略過的作業</summary>
+      <div id="ignored"></div>
+    </details>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -11,8 +11,8 @@ android {
         applicationId = "tw.thorsheep.simpleapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40201
-        versionName = "4.2.1"
+        versionCode = 40300
+        versionName = "4.3.0"
     }
     buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }

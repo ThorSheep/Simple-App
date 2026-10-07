@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Simple App ee-class 作業匯入",
+  "description": "從中央大學 ee-class 作業頁手動匯入待辦到你的 Simple App 同步伺服器。",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "匯入 ee-class 作業",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "activeTab"],
+  "optional_host_permissions": ["https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://ncueeclass.ncu.edu.tw/course/homework*"],
+      "js": ["parser.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
