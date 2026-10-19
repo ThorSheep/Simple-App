@@ -97,18 +97,28 @@ func (s *lineBotService) webhook(w http.ResponseWriter, r *http.Request) {
 		if event.Type != "message" || event.Message.Type != "text" || event.ReplyToken == "" || event.Source.UserID != s.allowedUserID {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
-		answer, answerErr := s.answer(ctx, event.Message.Text)
-		cancel()
-		if answerErr != nil {
-			log.Printf("LINE chat response failed: %v", answerErr)
-			answer = "目前無法整理資料，請稍後再試。"
-		}
-		if err := s.replyMessage(r.Context(), event.ReplyToken, truncateLineText(answer)); err != nil {
-			log.Printf("LINE chat reply failed: %v", err)
-		}
+		event := event
+		go s.replyToEvent(event)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *lineBotService) replyToEvent(event lineWebhookEvent) {
+	// LINE ends the webhook request as soon as it receives HTTP 200. AI work must
+	// therefore not inherit the request context, or it will be cancelled mid-response.
+	answerContext, cancelAnswer := context.WithTimeout(context.Background(), 50*time.Second)
+	answer, answerErr := s.answer(answerContext, event.Message.Text)
+	cancelAnswer()
+	if answerErr != nil {
+		log.Printf("LINE chat response failed: %v", answerErr)
+		answer = "目前無法整理資料，請稍後再試。"
+	}
+
+	replyContext, cancelReply := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancelReply()
+	if err := s.replyMessage(replyContext, event.ReplyToken, truncateLineText(answer)); err != nil {
+		log.Printf("LINE chat reply failed: %v", err)
+	}
 }
 
 func (s *lineBotService) validSignature(signature string, body []byte) bool {

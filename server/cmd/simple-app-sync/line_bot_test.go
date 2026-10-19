@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLineBotRepliesToFixedCommandOnlyForAllowedUser(t *testing.T) {
@@ -31,24 +32,34 @@ func TestLineBotRepliesToFixedCommandOnlyForAllowedUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var replies []string
-	bot.replyMessage = func(_ context.Context, _ string, text string) error { replies = append(replies, text); return nil }
+	replies := make(chan string, 2)
+	bot.replyMessage = func(_ context.Context, _ string, text string) error { replies <- text; return nil }
 
 	body := []byte(`{"events":[{"type":"message","replyToken":"reply","source":{"userId":"U-person"},"message":{"type":"text","text":"未完成作業"}}]}`)
 	req := httptest.NewRequest(http.MethodPost, "/line/webhook", bytes.NewReader(body))
 	req.Header.Set("X-Line-Signature", lineSignature("secret", body))
 	response := httptest.NewRecorder()
 	bot.webhook(response, req)
-	if response.Code != http.StatusOK || len(replies) != 1 || !strings.Contains(replies[0], "期中作業") {
-		t.Fatalf("unexpected reply: %d %#v", response.Code, replies)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", response.Code)
+	}
+	select {
+	case reply := <-replies:
+		if !strings.Contains(reply, "期中作業") {
+			t.Fatalf("unexpected reply: %q", reply)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for asynchronous LINE reply")
 	}
 
 	blocked := []byte(`{"events":[{"type":"message","replyToken":"reply","source":{"userId":"U-other"},"message":{"type":"text","text":"未完成作業"}}]}`)
 	req = httptest.NewRequest(http.MethodPost, "/line/webhook", bytes.NewReader(blocked))
 	req.Header.Set("X-Line-Signature", lineSignature("secret", blocked))
 	bot.webhook(httptest.NewRecorder(), req)
-	if len(replies) != 1 {
-		t.Fatalf("unexpected reply for blocked user: %#v", replies)
+	select {
+	case reply := <-replies:
+		t.Fatalf("unexpected reply for blocked user: %q", reply)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
