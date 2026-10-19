@@ -34,12 +34,14 @@ type config struct {
 	dueReminderTime    string
 	dueReminderDays    string
 	reminderCheckEvery string
+	mcpBearerToken     string
 }
 
 type server struct {
 	db            *sql.DB
 	pairCode      string
 	notifications *notificationHub
+	mcp           *mcpService
 }
 
 // notificationHub only carries a wake-up signal. Clients still fetch changes
@@ -144,6 +146,7 @@ func main() {
 		dueReminderTime:    value("LINE_DUE_REMINDER_TIME", "09:00"),
 		dueReminderDays:    value("LINE_DUE_REMINDER_DAYS", "3,1,0"),
 		reminderCheckEvery: value("REMINDER_CHECK_INTERVAL", "5m"),
+		mcpBearerToken:     os.Getenv("MCP_BEARER_TOKEN"),
 	}
 	if len(cfg.pairCode) < 16 {
 		log.Fatal("PAIR_CODE must contain at least 16 characters")
@@ -153,7 +156,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub()}
+	mcp, err := newMCPService(db, cfg.mcpBearerToken, cfg.reminderTimezone)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub(), mcp: mcp}
 	reminders, err := newReminderService(db, reminderConfig{
 		accessToken: cfg.lineAccessToken,
 		userID:      cfg.lineUserID,
@@ -171,6 +178,11 @@ func main() {
 		log.Printf("LINE reminders enabled for the configured personal account")
 	} else {
 		log.Printf("LINE reminders disabled; set both LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID to enable them")
+	}
+	if mcp.enabled() {
+		log.Printf("Personal Butler MCP server enabled at /mcp")
+	} else {
+		log.Printf("Personal Butler MCP server disabled; set MCP_BEARER_TOKEN to enable it")
 	}
 	log.Printf("Simple App sync server listening on %s", cfg.listenAddr)
 	log.Fatal(http.ListenAndServe(cfg.listenAddr, s.routes()))
@@ -235,6 +247,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/sync", s.sync)
 	mux.HandleFunc("GET /v1/notifications", s.notificationsEndpoint)
 	mux.HandleFunc("POST /v1/devices/revoke", s.revoke)
+	if s.mcp != nil && s.mcp.enabled() {
+		mux.Handle("/mcp", s.mcp)
+	}
 	return limitBody(mux)
 }
 

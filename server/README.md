@@ -40,6 +40,20 @@ Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker �
 
 預設會在台灣時間 07:00 傳送今日課程與今日／明日到期事項，並在 09:00 對每件未完成事項於到期前 3 天、1 天與當天各提醒一次。提醒傳送成功後會記錄在 SQLite，伺服器重新啟動也不會重複傳送。可用 `.env` 的 `LINE_DAILY_SUMMARY_TIME`、`LINE_DUE_REMINDER_TIME`、`LINE_DUE_REMINDER_DAYS` 與 `REMINDER_TIMEZONE` 調整。
 
+## 選用：個人管家 MCP Server
+
+伺服器可在 `/mcp` 提供真正的唯讀 MCP 工具，讓受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與個人摘要。它與 App 同步端點共用資料庫，但使用**獨立憑證**，不接受 App 配對碼或裝置憑證。
+
+1. 產生一組至少 32 字元的隨機值，放到本機 `server/.env`：
+
+   ```dotenv
+   MCP_BEARER_TOKEN=只給MCP用的長隨機值
+   ```
+
+2. 重新啟動伺服器後，MCP URL 為 `https://你的網域/mcp`，用戶端必須帶上 `Authorization: Bearer 你的MCP憑證`。
+
+MCP 第一版只提供查詢工具，不能建立、修改或刪除任何資料。請只將憑證交給你信任的 MCP 用戶端；不要把它放進 App、瀏覽器擴充功能、Git 或公開聊天紀錄。
+
 ### 開發者選用：分離測試與正式環境
 
 若你持續開發 App，想讓測試資料不會同步到正式版，可在同一台電腦保留原本單一伺服器作為測試環境，另外建立一個正式環境網址。這是選用設定，一般使用者不需要執行。
@@ -73,5 +87,6 @@ Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker �
 | `LINE_DUE_REMINDER_TIME` | `09:00` | 到期提醒檢查與發送時間 |
 | `LINE_DUE_REMINDER_DAYS` | `3,1,0` | 以逗號分隔的到期前提醒天數 |
 | `REMINDER_CHECK_INTERVAL` | `5m` | 伺服器檢查提醒排程的間隔 |
+| `MCP_BEARER_TOKEN` | 無 | 啟用 `/mcp` 所需的獨立憑證；至少 32 字元 |
 
 伺服器目前只接受同步協定第 1 版。請妥善保管配對碼；所有預定裝置配對完成後，建議更換它。
