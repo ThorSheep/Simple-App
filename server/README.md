@@ -19,6 +19,22 @@ Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker �
 
 較新版 App 會使用 WebSocket 顯示前景中的資料更新提示。更新伺服器程式後，重新執行相同的 `docker compose ... up -d --build` 命令即可套用，既有 SQLite 資料與已配對裝置不會被清除。
 
+## 程式架構（開發者）
+
+伺服器程式位於 `cmd/simple-app-sync/`，所有檔案暫時維持同一個 Go 套件，以便在不改變 API、SQLite 格式或部署方式的前提下，依功能拆開維護：
+
+| 檔案群組 | 職責 |
+| --- | --- |
+| `server.go`、`config.go`、`database.go` | 程式啟動、環境變數與 SQLite 初始化 |
+| `http_routes.go`、`http_json.go` | HTTP 路由、請求大小限制與 JSON 回應 |
+| `sync_handlers.go`、`notification_hub.go` | 裝置配對、資料同步、撤銷與 WebSocket 更新提示 |
+| `reminder_*.go`、`line_push.go` | 同步資料快照、LINE 排程提醒、訊息格式與時間處理 |
+| `line_bot.go` | LINE Webhook 驗證、固定指令與 AI 模式選擇 |
+| `ollama_chat.go`、`openai_chat.go` | 本機 Ollama 與 OpenAI 的自然語言工具呼叫 |
+| `mcp.go`、`mcp_tools.go` | MCP HTTP 協定、授權及唯讀個人資料工具 |
+
+共用的 AI 提示詞 `personalButlerInstruction` 位於 `openai_chat.go`，因此修改一次即可同時影響 OpenAI 與 Ollama。新增功能時請放進對應領域檔案，並在 `*_test.go` 補上測試，而不要再把程式堆進 `server.go`。
+
 ## 選用：LINE 個人提醒
 
 伺服器可從已同步的 App 資料產生 LINE 主動提醒。這項功能只讀取 App 的課程、上課時段與未完成事項；手機本機行事曆（例如 Google 日曆）不會同步到伺服器，因此不會包含在提醒中。
