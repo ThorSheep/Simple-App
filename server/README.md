@@ -1,6 +1,6 @@
 # Simple App 自託管同步伺服器
 
-這是 Simple App v4 的自託管同步端點，供同一位使用者的個人裝置同步，不是公開的多人雲端服務。一般使用者只需要一套伺服器、一個網域與一個 SQLite 資料庫。
+這是 Simple App v5 的自託管同步端點，供同一位使用者的個人裝置同步，不是公開的多人雲端服務。一般使用者只需要一套伺服器、一個網域與一個 SQLite 資料庫。
 
 ## 使用 Docker Compose 部署
 
@@ -112,7 +112,10 @@ MCP 第一版只提供查詢工具，不能建立、修改或刪除任何資料�
 | `LINE_DUE_REMINDER_DAYS` | `3,1,0` | 以逗號分隔的到期前提醒天數 |
 | `REMINDER_CHECK_INTERVAL` | `5m` | 伺服器檢查提醒排程的間隔 |
 | `MCP_BEARER_TOKEN` | 無 | 啟用 `/mcp` 所需的獨立憑證；至少 32 字元 |
+| `PROD_MCP_BEARER_TOKEN` | 無 | 雙環境正式伺服器的 MCP 憑證 |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Docker 連到本機 Ollama 的網址 |
 | `OLLAMA_MODEL` | 無 | 啟用本機 AI 對話的 Ollama 模型名稱 |
+| `PROD_LINE_CHANNEL_SECRET` | 無 | 雙環境正式伺服器的 LINE webhook Channel secret |
+| `PROD_LINE_ALLOWED_USER_ID` | 無 | 雙環境正式伺服器可獲得回覆的 LINE User ID |
 
 伺服器目前只接受同步協定第 1 版。請妥善保管配對碼；所有預定裝置配對完成後，建議更換它。

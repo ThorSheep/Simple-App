@@ -17,6 +17,7 @@
 - 支援 JSON 匯出與匯入；備份包含 App 資料與設定，不包含手機行事曆事件或日曆選擇。
 - 正式版可檢查 GitHub Release、下載新版 APK，並交由 Android 系統驗證簽章與確認安裝。
 - 可透過 Chrome／Edge 的 ee-class 作業匯入擴充功能，手動選取中央 ee-class 作業並同步為待辦；不會保存 Portal 帳密或 Cookie。
+- 自託管伺服器可選擇提供「個人管家」MCP Server 與 LINE 查詢機器人；固定指令與本機 Ollama AI 共用唯讀資料工具。
 
 ## 建置
 
@@ -33,6 +34,10 @@ Debug APK 位於 `app/build/outputs/apk/debug/app-debug.apk`，僅供開發測�
 同步伺服器位於 [`server/`](server/)，可用 Docker Compose 搭配 Caddy 部署。先依照 [`server/README.md`](server/README.md) 設定 DNS、HTTPS 網域與一次性配對碼；確認 `https://你的網域/healthz` 回傳 `{"status":"ok"}` 後，在 App 的「設定 → 資料與版本」輸入伺服器網址及配對碼。
 
 首次配對會同步現有收支、課程、上課時段、待辦、公告訂閱與關鍵字。手機行事曆、公告快取、已讀狀態、通知與外觀偏好維持裝置本機。同步採離線優先；在兩台裝置同時修改同一筆資料時，使用最後修改優先規則。自託管同步仍應保留 JSON 匯出備份。
+
+## 個人管家 MCP 與 LINE 查詢
+
+5.0.0 的自託管伺服器可選擇啟用唯讀 MCP Server，供受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與摘要。LINE 官方帳號也可使用相同工具回覆固定指令，或選擇由同一台電腦上的 Ollama 處理自然語言提問。完整的安全限制、Docker 設定及 LINE webhook 步驟請參閱 [伺服器說明](server/README.md)。
 
 ## ee-class 作業匯入
 
@@ -52,8 +57,8 @@ GitHub Actions 會在一般 push 與 Pull Request 執行測試、lint 與 debug 
 發布新版本時，依序更新 `app/build.gradle.kts` 的 `versionCode`、`versionName`、[CHANGELOG](CHANGELOG.md) 及 `docs/releases/v版本號.md`，合併到 `main` 後建立並推送 tag，例如：
 
 ```powershell
-git tag -a v3.2.0 -m "發布 3.2.0"
-git push origin v3.2.0
+git tag -a v5.0.0 -m "發布 5.0.0"
+git push origin v5.0.0
 ```
 
 Release 建置完成後，App 會從公開的 GitHub Release 檢查與下載正式 APK。Android Studio 安裝的 debug 版不支援 App 內更新。
@@ -69,7 +74,7 @@ Release 建置完成後，App 會從公開的 GitHub Release 檢查與下載正�
 - 未列入 `available.csv` 的公告來源可能因網址失效、連線問題或頁面結構不相容而隱藏，原始資料保留供後續修正。
 - 公告關鍵字只比對公告列表的標題、單位與分類，不讀取公告全文。
 - Android 的背景更新會受省電及網路條件影響，無法保證準時執行。
-- 課程尚無學期起訖、停課例外或重複待辦；事項尚無到期提醒。
+- 課程尚無學期起訖、停課例外或重複待辦。
 
 ## 安全與隱私
 
