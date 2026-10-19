@@ -40,6 +40,28 @@ Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker �
 
 預設會在台灣時間 07:00 傳送今日課程與今日／明日到期事項，並在 09:00 對每件未完成事項於到期前 3 天、1 天與當天各提醒一次。提醒傳送成功後會記錄在 SQLite，伺服器重新啟動也不會重複傳送。可用 `.env` 的 `LINE_DAILY_SUMMARY_TIME`、`LINE_DUE_REMINDER_TIME`、`LINE_DUE_REMINDER_DAYS` 與 `REMINDER_TIMEZONE` 調整。
 
+### LINE 固定指令與本機 AI 對話
+
+若你想直接在 LINE 與「個人管家」聊天，除了既有的 Channel access token 與 User ID，還要從 LINE Developers Console 的 Messaging API 頁面取得 **Channel secret**。在本機 `server/.env` 加入：
+
+```dotenv
+LINE_CHANNEL_SECRET=你的ChannelSecret
+LINE_ALLOWED_USER_ID=你的LINEUserID
+```
+
+重新啟動伺服器後，在 LINE Developers Console 設定 Webhook URL 為 `https://你的網域/line/webhook`，啟用 Use webhook，並關閉 LINE Official Account Manager 的自動回應訊息，避免同一則問題收到兩個回覆。伺服器會驗證 LINE 簽章，且只回覆 `LINE_ALLOWED_USER_ID` 指定的個人帳號。
+
+未設定 AI 時，LINE 可直接使用固定指令：`今日行程`、`未完成作業`、`本週截止`、`摘要`、`說明`。這些指令直接查詢唯讀 MCP 工具，不會消耗 AI 用量。
+
+若要以本機 Ollama 理解自然語言問題，先在這台電腦安裝 Ollama 並下載支援工具呼叫的模型，接著加入：
+
+```dotenv
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=你已下載的模型名稱
+```
+
+Docker Desktop 使用 `host.docker.internal` 連到同一台 Windows 電腦的 Ollama；不要將 Ollama 的 11434 連接埠公開到網際網路。Ollama 只會取得回答問題所需的 MCP 工具結果，第一版也不會保存 LINE 對話紀錄。
+
 ## 選用：個人管家 MCP Server
 
 伺服器可在 `/mcp` 提供真正的唯讀 MCP 工具，讓受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與個人摘要。它與 App 同步端點共用資料庫，但使用**獨立憑證**，不接受 App 配對碼或裝置憑證。
@@ -82,11 +104,15 @@ MCP 第一版只提供查詢工具，不能建立、修改或刪除任何資料�
 | `PROD_PAIR_CODE` | 無 | 選用雙環境設定中的正式裝置配對碼 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | 無 | LINE Messaging API 的 Channel access token；與 `LINE_USER_ID` 同時設定才啟用提醒 |
 | `LINE_USER_ID` | 無 | 接收個人提醒的 LINE 使用者 ID |
+| `LINE_CHANNEL_SECRET` | 無 | 啟用 LINE webhook 聊天所需的 Channel secret |
+| `LINE_ALLOWED_USER_ID` | 無 | 可獲得機器人回覆的唯一 LINE User ID |
 | `REMINDER_TIMEZONE` | `Asia/Taipei` | 提醒排程時區 |
 | `LINE_DAILY_SUMMARY_TIME` | `07:00` | 每日課程與待辦摘要發送時間 |
 | `LINE_DUE_REMINDER_TIME` | `09:00` | 到期提醒檢查與發送時間 |
 | `LINE_DUE_REMINDER_DAYS` | `3,1,0` | 以逗號分隔的到期前提醒天數 |
 | `REMINDER_CHECK_INTERVAL` | `5m` | 伺服器檢查提醒排程的間隔 |
 | `MCP_BEARER_TOKEN` | 無 | 啟用 `/mcp` 所需的獨立憑證；至少 32 字元 |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Docker 連到本機 Ollama 的網址 |
+| `OLLAMA_MODEL` | 無 | 啟用本機 AI 對話的 Ollama 模型名稱 |
 
 伺服器目前只接受同步協定第 1 版。請妥善保管配對碼；所有預定裝置配對完成後，建議更換它。

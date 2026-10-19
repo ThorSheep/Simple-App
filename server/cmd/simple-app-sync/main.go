@@ -29,12 +29,16 @@ type config struct {
 	pairCode           string
 	lineAccessToken    string
 	lineUserID         string
+	lineChannelSecret  string
+	lineAllowedUserID  string
 	reminderTimezone   string
 	dailySummaryTime   string
 	dueReminderTime    string
 	dueReminderDays    string
 	reminderCheckEvery string
 	mcpBearerToken     string
+	ollamaBaseURL      string
+	ollamaModel        string
 }
 
 type server struct {
@@ -42,6 +46,7 @@ type server struct {
 	pairCode      string
 	notifications *notificationHub
 	mcp           *mcpService
+	lineBot       *lineBotService
 }
 
 // notificationHub only carries a wake-up signal. Clients still fetch changes
@@ -141,12 +146,16 @@ func main() {
 		pairCode:           os.Getenv("PAIR_CODE"),
 		lineAccessToken:    os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"),
 		lineUserID:         os.Getenv("LINE_USER_ID"),
+		lineChannelSecret:  os.Getenv("LINE_CHANNEL_SECRET"),
+		lineAllowedUserID:  value("LINE_ALLOWED_USER_ID", os.Getenv("LINE_USER_ID")),
 		reminderTimezone:   value("REMINDER_TIMEZONE", "Asia/Taipei"),
 		dailySummaryTime:   value("LINE_DAILY_SUMMARY_TIME", "07:00"),
 		dueReminderTime:    value("LINE_DUE_REMINDER_TIME", "09:00"),
 		dueReminderDays:    value("LINE_DUE_REMINDER_DAYS", "3,1,0"),
 		reminderCheckEvery: value("REMINDER_CHECK_INTERVAL", "5m"),
 		mcpBearerToken:     os.Getenv("MCP_BEARER_TOKEN"),
+		ollamaBaseURL:      value("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
+		ollamaModel:        os.Getenv("OLLAMA_MODEL"),
 	}
 	if len(cfg.pairCode) < 16 {
 		log.Fatal("PAIR_CODE must contain at least 16 characters")
@@ -161,6 +170,14 @@ func main() {
 		log.Fatal(err)
 	}
 	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub(), mcp: mcp}
+	lineBot, err := newLineBotService(lineBotConfig{
+		accessToken: cfg.lineAccessToken, channelSecret: cfg.lineChannelSecret, allowedUserID: cfg.lineAllowedUserID,
+		ollamaBaseURL: cfg.ollamaBaseURL, ollamaModel: cfg.ollamaModel,
+	}, mcp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.lineBot = lineBot
 	reminders, err := newReminderService(db, reminderConfig{
 		accessToken: cfg.lineAccessToken,
 		userID:      cfg.lineUserID,
@@ -183,6 +200,11 @@ func main() {
 		log.Printf("Personal Butler MCP server enabled at /mcp")
 	} else {
 		log.Printf("Personal Butler MCP server disabled; set MCP_BEARER_TOKEN to enable it")
+	}
+	if lineBot.enabled() {
+		log.Printf("LINE Personal Butler chat enabled at /line/webhook")
+	} else {
+		log.Printf("LINE Personal Butler chat disabled; set LINE_CHANNEL_SECRET to enable it")
 	}
 	log.Printf("Simple App sync server listening on %s", cfg.listenAddr)
 	log.Fatal(http.ListenAndServe(cfg.listenAddr, s.routes()))
@@ -249,6 +271,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/devices/revoke", s.revoke)
 	if s.mcp != nil && s.mcp.enabled() {
 		mux.Handle("/mcp", s.mcp)
+	}
+	if s.lineBot != nil && s.lineBot.enabled() {
+		mux.HandleFunc("POST /line/webhook", s.lineBot.webhook)
 	}
 	return limitBody(mux)
 }
