@@ -170,6 +170,14 @@ type syncedLineReminderSettings struct {
 	IncludeTomorrow bool   `json:"includeTomorrow"`
 	DueTime         string `json:"dueTime"`
 	DueDays         []int  `json:"dueDays"`
+	AIProvider      string `json:"aiProvider"`
+}
+
+func (s syncedLineReminderSettings) aiProvider() string {
+	if strings.EqualFold(strings.TrimSpace(s.AIProvider), "openai") {
+		return "openai"
+	}
+	return "ollama"
 }
 
 type reminderCourse struct {

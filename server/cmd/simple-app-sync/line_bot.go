@@ -24,13 +24,20 @@ type lineBotConfig struct {
 	allowedUserID string
 	ollamaBaseURL string
 	ollamaModel   string
+	openAIAPIKey  string
+	openAIModel   string
+}
+
+type lineChatProvider interface {
+	answer(context.Context, string) (string, error)
 }
 
 type lineBotService struct {
 	channelSecret string
 	allowedUserID string
 	tools         *mcpService
-	ollama        *ollamaChatService
+	ollama        lineChatProvider
+	openAI        lineChatProvider
 	replyMessage  func(context.Context, string, string) error
 }
 
@@ -70,6 +77,9 @@ func newLineBotService(cfg lineBotConfig, tools *mcpService) (*lineBotService, e
 			return nil, err
 		}
 		service.ollama = ollama
+	}
+	if cfg.openAIAPIKey != "" && cfg.openAIModel != "" {
+		service.openAI = newOpenAIChatService(cfg.openAIAPIKey, cfg.openAIModel, tools)
 	}
 	return service, nil
 }
@@ -149,10 +159,29 @@ func (s *lineBotService) answer(ctx context.Context, input string) (string, erro
 		result, err := s.tools.callTool(ctx, "get_task_summary", map[string]any{})
 		return result.Text, err
 	}
-	if s.ollama == nil {
-		return "我目前可處理固定指令：今日行程、未完成作業、本週截止、摘要。AI 對話尚未啟用。", nil
+	provider, name, err := s.selectedProvider(ctx)
+	if err != nil {
+		return "目前無法讀取 AI 回覆模式，請稍後再試。", err
 	}
-	return s.ollama.answer(ctx, input)
+	if provider == nil {
+		return fmt.Sprintf("目前選擇「%s」，但伺服器尚未完成對應設定。你仍可使用固定指令：今日行程、未完成作業、本週截止、摘要。", name), nil
+	}
+	return provider.answer(ctx, input)
+}
+
+func (s *lineBotService) selectedProvider(ctx context.Context) (lineChatProvider, string, error) {
+	snapshot, err := (&reminderService{db: s.tools.db}).loadSnapshot(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	provider := "ollama"
+	if snapshot.settings != nil {
+		provider = snapshot.settings.aiProvider()
+	}
+	if provider == "openai" {
+		return s.openAI, "OpenAI API", nil
+	}
+	return s.ollama, "本機 Ollama", nil
 }
 
 func lineReplySender(accessToken string) func(context.Context, string, string) error {
@@ -232,7 +261,7 @@ func newOllamaChatService(baseURL, model string, tools *mcpService) (*ollamaChat
 
 func (s *ollamaChatService) answer(ctx context.Context, question string) (string, error) {
 	messages := []ollamaMessage{
-		{Role: "system", Content: "你是使用者的個人管家。回答一律使用繁體中文。只能根據工具回傳的個人資料回答；資料不足時要坦白說明。不可聲稱修改、建立或刪除任何資料。回答請簡潔。"},
+		{Role: "system", Content: personalButlerInstruction},
 		{Role: "user", Content: question},
 	}
 	for step := 0; step < 3; step++ {

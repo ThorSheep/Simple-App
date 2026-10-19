@@ -17,7 +17,7 @@
 - 支援 JSON 匯出與匯入；備份包含 App 資料與設定，不包含手機行事曆事件或日曆選擇。
 - 正式版可檢查 GitHub Release、下載新版 APK，並交由 Android 系統驗證簽章與確認安裝。
 - 可透過 Chrome／Edge 的 ee-class 作業匯入擴充功能，手動選取中央 ee-class 作業並同步為待辦；不會保存 Portal 帳密或 Cookie。
-- 自託管伺服器可選擇提供「個人管家」MCP Server 與 LINE 查詢機器人；固定指令與本機 Ollama AI 共用唯讀資料工具。
+- 自託管伺服器可選擇提供「個人管家」MCP Server 與 LINE 查詢機器人；固定指令與可切換的本機 Ollama／OpenAI AI 共用唯讀資料工具。
 
 ## 建置
 
@@ -37,7 +37,7 @@ Debug APK 位於 `app/build/outputs/apk/debug/app-debug.apk`，僅供開發測�
 
 ## 個人管家 MCP 與 LINE 查詢
 
-5.0.0 的自託管伺服器可選擇啟用唯讀 MCP Server，供受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與摘要。LINE 官方帳號也可使用相同工具回覆固定指令，或選擇由同一台電腦上的 Ollama 處理自然語言提問。完整的安全限制、Docker 設定及 LINE webhook 步驟請參閱 [伺服器說明](server/README.md)。
+5.0.0 的自託管伺服器可選擇啟用唯讀 MCP Server，供受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與摘要。LINE 官方帳號也可使用相同工具回覆固定指令；自然語言提問可在 App 的 LINE 提醒頁切換由本機 Ollama 或 OpenAI API 處理。完整的安全限制、Docker 設定及 LINE webhook 步驟請參閱 [伺服器說明](server/README.md)。
 
 ## ee-class 作業匯入
 

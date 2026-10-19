@@ -40,7 +40,7 @@ Caddy 會自動申請及續期 HTTPS 憑證。SQLite 資料庫儲存在 Docker �
 
 預設會在台灣時間 07:00 傳送今日課程與今日／明日到期事項，並在 09:00 對每件未完成事項於到期前 3 天、1 天與當天各提醒一次。提醒傳送成功後會記錄在 SQLite，伺服器重新啟動也不會重複傳送。可用 `.env` 的 `LINE_DAILY_SUMMARY_TIME`、`LINE_DUE_REMINDER_TIME`、`LINE_DUE_REMINDER_DAYS` 與 `REMINDER_TIMEZONE` 調整。
 
-### LINE 固定指令與本機 AI 對話
+### LINE 固定指令與 AI 對話
 
 若你想直接在 LINE 與「個人管家」聊天，除了既有的 Channel access token 與 User ID，還要從 LINE Developers Console 的 Messaging API 頁面取得 **Channel secret**。在本機 `server/.env` 加入：
 
@@ -61,6 +61,17 @@ OLLAMA_MODEL=你已下載的模型名稱
 ```
 
 Docker Desktop 使用 `host.docker.internal` 連到同一台 Windows 電腦的 Ollama；不要將 Ollama 的 11434 連接埠公開到網際網路。Ollama 只會取得回答問題所需的 MCP 工具結果，第一版也不會保存 LINE 對話紀錄。
+
+若要改用 OpenAI，請先在 OpenAI Platform 建立 API Key，並只在本機 `server/.env` 設定：
+
+```dotenv
+OPENAI_API_KEY=你的OpenAIAPIKey
+OPENAI_MODEL=你選擇的模型名稱
+```
+
+接著在 App 的「設定 → LINE 提醒 → LINE AI 對話」選擇「OpenAI API」。此選擇會同步到同一台伺服器上的其他裝置；API Key 與模型名稱不會寫入 App、同步資料或 Git。選擇 OpenAI 時，LINE 的自然語言問題與為回答而取得的唯讀課程／待辦工具結果會傳送至 OpenAI API。固定指令不使用 AI，仍只在你的伺服器查詢資料。
+
+在雙環境模式下，正式伺服器請使用 `PROD_OPENAI_API_KEY` 和 `PROD_OPENAI_MODEL`；測試環境預設不會讀取 OpenAI 或 LINE 憑證，避免誤發或誤計費。
 
 ## 選用：個人管家 MCP Server
 
@@ -115,6 +126,10 @@ MCP 第一版只提供查詢工具，不能建立、修改或刪除任何資料�
 | `PROD_MCP_BEARER_TOKEN` | 無 | 雙環境正式伺服器的 MCP 憑證 |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Docker 連到本機 Ollama 的網址 |
 | `OLLAMA_MODEL` | 無 | 啟用本機 AI 對話的 Ollama 模型名稱 |
+| `OPENAI_API_KEY` | 無 | 單一伺服器模式中 OpenAI API 的金鑰；只能留在本機 `.env` |
+| `OPENAI_MODEL` | 無 | 單一伺服器模式中 OpenAI API 使用的模型名稱 |
+| `PROD_OPENAI_API_KEY` | 無 | 雙環境正式伺服器使用的 OpenAI API 金鑰 |
+| `PROD_OPENAI_MODEL` | 無 | 雙環境正式伺服器使用的 OpenAI 模型名稱 |
 | `PROD_LINE_CHANNEL_SECRET` | 無 | 雙環境正式伺服器的 LINE webhook Channel secret |
 | `PROD_LINE_ALLOWED_USER_ID` | 無 | 雙環境正式伺服器可獲得回覆的 LINE User ID |
 

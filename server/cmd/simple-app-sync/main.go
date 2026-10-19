@@ -39,6 +39,8 @@ type config struct {
 	mcpBearerToken     string
 	ollamaBaseURL      string
 	ollamaModel        string
+	openAIAPIKey       string
+	openAIModel        string
 }
 
 type server struct {
@@ -156,6 +158,8 @@ func main() {
 		mcpBearerToken:     os.Getenv("MCP_BEARER_TOKEN"),
 		ollamaBaseURL:      value("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
 		ollamaModel:        os.Getenv("OLLAMA_MODEL"),
+		openAIAPIKey:       os.Getenv("OPENAI_API_KEY"),
+		openAIModel:        os.Getenv("OPENAI_MODEL"),
 	}
 	if len(cfg.pairCode) < 16 {
 		log.Fatal("PAIR_CODE must contain at least 16 characters")
@@ -172,7 +176,7 @@ func main() {
 	s := &server{db: db, pairCode: cfg.pairCode, notifications: newNotificationHub(), mcp: mcp}
 	lineBot, err := newLineBotService(lineBotConfig{
 		accessToken: cfg.lineAccessToken, channelSecret: cfg.lineChannelSecret, allowedUserID: cfg.lineAllowedUserID,
-		ollamaBaseURL: cfg.ollamaBaseURL, ollamaModel: cfg.ollamaModel,
+		ollamaBaseURL: cfg.ollamaBaseURL, ollamaModel: cfg.ollamaModel, openAIAPIKey: cfg.openAIAPIKey, openAIModel: cfg.openAIModel,
 	}, mcp)
 	if err != nil {
 		log.Fatal(err)

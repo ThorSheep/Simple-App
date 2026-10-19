@@ -103,6 +103,10 @@ import java.time.format.DateTimeFormatter
                     ToggleRow("啟用 LINE 通知", reminders.enabled) { saveReminders(reminders.copy(enabled = it)) }
                     Text("LINE Token 僅保存在你的自託管伺服器，不會儲存在 App 或同步到其他裝置。")
                 }
+                item { SectionTitle("LINE AI 對話")
+                    Choice("AI 回覆模式", reminders.aiProvider, listOf(AI_PROVIDER_OLLAMA to "本機 Ollama", AI_PROVIDER_OPENAI to "OpenAI API")) { saveReminders(reminders.copy(aiProvider = it)) }
+                    Text("選擇會同步到你的自託管伺服器與其他裝置。API Key 與模型名稱只保存在伺服器 .env；若所選服務未設定，LINE 會提示你完成伺服器設定。")
+                }
                 if (reminders.enabled) {
                     item { SectionTitle("每日摘要"); ToggleRow("傳送每日摘要", reminders.dailySummary) { saveReminders(reminders.copy(dailySummary = it)) }
                         if (reminders.dailySummary) PickTime("摘要發送時間", reminders.dailyTime) { saveReminders(reminders.copy(dailyTime = it)) }

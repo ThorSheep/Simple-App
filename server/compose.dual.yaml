@@ -27,6 +27,8 @@ services:
       MCP_BEARER_TOKEN: ${PROD_MCP_BEARER_TOKEN:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      OPENAI_API_KEY: ${PROD_OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${PROD_OPENAI_MODEL:-}
     volumes:
       - sync-prod-data:/data
 
@@ -40,6 +42,8 @@ services:
       LINE_ALLOWED_USER_ID: ""
       MCP_BEARER_TOKEN: ""
       OLLAMA_MODEL: ""
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: ""
 
   caddy:
     depends_on:
