@@ -19,6 +19,12 @@
 - 可透過 Chrome／Edge 的 ee-class 作業匯入擴充功能，手動選取中央 ee-class 作業並同步為待辦；不會保存 Portal 帳密或 Cookie。
 - 自託管伺服器可選擇提供「個人管家」MCP Server 與 LINE 查詢機器人；固定指令與可切換的本機 Ollama／OpenAI AI 共用唯讀資料工具。
 
+## 開發架構
+
+- `app/src/main/java/.../`：Android App。`JournalDatabase.kt` 管理 Room 資料庫與基本資料表；`Backup.kt` 處理 JSON 備份；`AnnouncementCatalog.kt` 讀取公告來源；其他檔案依課程、公告、同步、設定等功能命名。
+- `server/cmd/simple-app-sync/`：自託管同步伺服器。HTTP 同步、LINE、MCP、提醒和 AI 提供者已依職責拆檔；詳細對照見 [伺服器架構說明](server/README.md#程式架構開發者)。
+- `extensions/eeclass-importer/`：中央 ee-class 作業匯入的 Chrome／Edge 擴充功能。
+
 ## 建置
 
 以 Android Studio 開啟專案，安裝 Android SDK 35，並使用 JDK 17 或 21。
