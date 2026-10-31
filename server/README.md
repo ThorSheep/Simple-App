@@ -89,6 +89,51 @@ OPENAI_MODEL=你選擇的模型名稱
 
 在雙環境模式下，正式伺服器請使用 `PROD_OPENAI_API_KEY` 和 `PROD_OPENAI_MODEL`；測試環境預設不會讀取 OpenAI 或 LINE 憑證，避免誤發或誤計費。
 
+## 選用：ee-class Gmail 自動匯入
+
+此功能使用 **Gmail API** 的唯讀 OAuth 授權，不使用 Gmail 密碼、IMAP、Gmail MCP 或 AI。伺服器只會列出你指定 Gmail 標籤中的信件，並且只接受寄件者為 `eeclass@ncu.edu.tw` 的訊息。它不保存信件全文；解析完成後只保存 Gmail 訊息 ID 作為去重紀錄，以及 Google OAuth refresh token（保存在 Docker 的 SQLite 資料卷）。因此備份資料卷時也要視為敏感資料。
+
+目前會處理中央 ee-class 的三種作業通知：
+
+- 「已開放繳交」：建立或更新一筆重要的「作業」待辦。
+- 「最後繳交期限提醒」：更新同一筆作業的截止時間。
+- 「繳交完成通知」：若該作業已由前兩種通知建立，標記為已完成。
+
+作業以「課程名稱＋作業名稱」建立穩定識別碼；重複通知不會重複建立待辦。伺服器會嘗試以課程名稱自動對應既有 Simple App 課程，無法確定時仍會匯入，但不會任意連結到錯誤課程。你若手動刪除某筆自動匯入的待辦，之後的提醒信不會把它重新建立。
+
+### Google Cloud 與伺服器設定
+
+1. 在 Google Cloud 專案啟用 **Gmail API**，建立 OAuth 同意畫面，並只加入 `https://www.googleapis.com/auth/gmail.readonly` 範圍。
+2. 建立「Web application」OAuth 用戶端。授權回呼網址填：
+
+   ```text
+   https://你的正式網域/gmail/oauth/callback
+   ```
+
+3. 在本機 `server/.env` 填入下列值；不可提交或貼到公開地方：
+
+   ```dotenv
+   GMAIL_OAUTH_CLIENT_ID=GoogleOAuthClientID
+   GMAIL_OAUTH_CLIENT_SECRET=GoogleOAuthClientSecret
+   GMAIL_OAUTH_REDIRECT_URL=https://你的網域/gmail/oauth/callback
+   GMAIL_OAUTH_SETUP_TOKEN=至少32字元的獨立隨機值
+   GMAIL_LABEL=eeClass
+   GMAIL_SENDER=eeclass@ncu.edu.tw
+   GMAIL_CHECK_INTERVAL=15m
+   ```
+
+   雙環境部署時，正式環境改填 `PROD_GMAIL_OAUTH_CLIENT_ID`、`PROD_GMAIL_OAUTH_CLIENT_SECRET`、`PROD_GMAIL_OAUTH_REDIRECT_URL`、`PROD_GMAIL_OAUTH_SETUP_TOKEN`，其餘選項可使用 `PROD_GMAIL_LABEL`、`PROD_GMAIL_SENDER`、`PROD_GMAIL_CHECK_INTERVAL` 覆寫。測試環境會強制停用 Gmail 匯入，避免讀取真實信件。
+
+4. 重新建立正式伺服器容器後，在你自己的瀏覽器開啟下列一次性連線網址，再使用接收 ee-class 信件的 Gmail 授權：
+
+   ```text
+   https://你的正式網域/gmail/connect?token=你的GMAIL_OAUTH_SETUP_TOKEN
+   ```
+
+5. 看到「Gmail 已連線」即可關閉頁面。伺服器會立即處理尚未看過的信件，之後每 15 分鐘檢查一次；手機／平板在前景會收到同步提示，回到 App 或下拉同步後即可看到待辦。
+
+Google 的 External／Testing OAuth 用戶端會讓 refresh token 在約 7 天後失效。這適合開發測試；長期自用前請依 Google 的發布／驗證規則改為正式狀態，或在失效後重新執行第 4 步。Gmail 唯讀範圍技術上仍允許程式讀取帳號信件，因此請只在你信任、自行管理的伺服器上設定。
+
 ## 選用：個人管家 MCP Server
 
 伺服器可在 `/mcp` 提供真正的唯讀 MCP 工具，讓受信任的 AI 用戶端查詢未完成事項、近期到期、今日行程與個人摘要。它與 App 同步端點共用資料庫，但使用**獨立憑證**，不接受 App 配對碼或裝置憑證。
@@ -148,5 +193,13 @@ MCP 第一版只提供查詢工具，不能建立、修改或刪除任何資料�
 | `PROD_OPENAI_MODEL` | 無 | 雙環境正式伺服器使用的 OpenAI 模型名稱 |
 | `PROD_LINE_CHANNEL_SECRET` | 無 | 雙環境正式伺服器的 LINE webhook Channel secret |
 | `PROD_LINE_ALLOWED_USER_ID` | 無 | 雙環境正式伺服器可獲得回覆的 LINE User ID |
+| `GMAIL_OAUTH_CLIENT_ID` | 無 | Gmail 自動匯入使用的 Google OAuth Client ID |
+| `GMAIL_OAUTH_CLIENT_SECRET` | 無 | Gmail 自動匯入使用的 Google OAuth Client secret；僅留在本機 `.env` |
+| `GMAIL_OAUTH_REDIRECT_URL` | 無 | Gmail OAuth 回呼網址，必須是 `/gmail/oauth/callback` 的公開 HTTPS URL |
+| `GMAIL_OAUTH_SETUP_TOKEN` | 無 | 開啟 Gmail 授權流程的獨立隨機值，至少 32 字元 |
+| `GMAIL_LABEL` | `eeClass` | 要讀取的 Gmail 標籤名稱 |
+| `GMAIL_SENDER` | `eeclass@ncu.edu.tw` | 只接受的 ee-class 寄件者地址 |
+| `GMAIL_CHECK_INTERVAL` | `15m` | Gmail 自動匯入檢查間隔，至少 1 分鐘 |
+| `PROD_GMAIL_OAUTH_*` | 無 | 雙環境正式伺服器使用對應的 Gmail OAuth 設定 |
 
 伺服器目前只接受同步協定第 1 版。請妥善保管配對碼；所有預定裝置配對完成後，建議更換它。

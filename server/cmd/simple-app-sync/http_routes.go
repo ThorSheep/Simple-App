@@ -18,6 +18,10 @@ func (s *server) routes() http.Handler {
 	if s.lineBot != nil && s.lineBot.enabled() {
 		mux.HandleFunc("POST /line/webhook", s.lineBot.webhook)
 	}
+	if s.gmail != nil && s.gmail.enabled() {
+		mux.HandleFunc("GET /gmail/connect", s.gmail.connect)
+		mux.HandleFunc("GET /gmail/oauth/callback", s.gmail.callback)
+	}
 	return limitBody(mux)
 }
 

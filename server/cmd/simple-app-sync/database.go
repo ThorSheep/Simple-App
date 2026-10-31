@@ -40,6 +40,22 @@ func openDatabase(path string) (*sql.DB, error) {
 			id TEXT PRIMARY KEY,
 			sent_at INTEGER NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS gmail_oauth_states (
+			state TEXT PRIMARY KEY,
+			expires_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS gmail_oauth_tokens (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			access_token TEXT NOT NULL,
+			refresh_token TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS gmail_processed_messages (
+			message_id TEXT PRIMARY KEY,
+			processed_at INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS gmail_processed_messages_processed_at ON gmail_processed_messages(processed_at);
 	`)
 	if err != nil {
 		db.Close()
