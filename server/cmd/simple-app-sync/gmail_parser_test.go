@@ -73,6 +73,39 @@ func TestGmailImporterCreatesImportantTaskAndMarksSubmissionDone(t *testing.T) {
 	}
 }
 
+func TestGmailImporterUpdatesMatchingExtensionTaskInsteadOfDuplicatingIt(t *testing.T) {
+	db, err := openDatabase(filepath.Join(t.TempDir(), "sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 11, 1, 9, 0, 0, 0, time.FixedZone("Asia/Taipei", 8*60*60))
+	service := &gmailService{db: db, clientID: "test-client", notifications: newNotificationHub(), now: func() time.Time { return now }}
+	if _, err := db.Exec("INSERT INTO devices(id, name, token_hash, created_at) VALUES('extension', 'extension', 'hash', ?)", now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO changes(operation_id, entity_type, entity_id, revision, device_id, deleted, payload, created_at) VALUES('course-op', 'course', 'course-1', 'extension:1', 'extension', 0, ?, ?)`, `{"id":"course-1","title":"學習、合作與創造 Learning Collaboration and Creativity","archived":false}`, now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	const extensionID = "eeclass-homework-72961"
+	extensionPayload := `{"id":"eeclass-homework-72961","title":"Week 09 作業繳交區","courseId":"course-1","kind":"作業","date":"2026-11-01","time":"22:00","note":"從中央 ee-class 匯入\nhttps://ncueeclass.ncu.edu.tw/course/homework/72961","done":false,"important":true}`
+	if _, err := db.Exec(`INSERT INTO changes(operation_id, entity_type, entity_id, revision, device_id, deleted, payload, created_at) VALUES('item-op', 'academicItem', ?, 'extension:2', 'extension', 0, ?, ?)`, extensionID, extensionPayload, now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	assignment := eeClassAssignment{Course: "學習、合作與創造 Learning Collaboration and Creativity", Title: "Week 09 作業繳交區", Date: "2026-11-01", Time: "22:00"}
+	changed, err := service.applyAssignment(context.Background(), assignment)
+	if err != nil || !changed {
+		t.Fatalf("Gmail assignment should update extension task: changed=%v err=%v", changed, err)
+	}
+	item, _, deleted, found, err := service.existingItem(context.Background(), extensionID)
+	if err != nil || !found || deleted || !item.Important {
+		t.Fatalf("extension task was not preserved: %#v found=%v deleted=%v err=%v", item, found, deleted, err)
+	}
+	if _, _, _, gmailFound, err := service.existingItem(context.Background(), eeClassItemID(assignment.Course, assignment.Title)); err != nil || gmailFound {
+		t.Fatalf("Gmail importer created a duplicate task: found=%v err=%v", gmailFound, err)
+	}
+}
+
 func TestGmailFromMustMatchExactMailbox(t *testing.T) {
 	if !gmailFromMatches("國立中央大學 「新 ee-class 系統」 <eeclass@ncu.edu.tw>", "eeclass@ncu.edu.tw") {
 		t.Fatal("expected matching sender")
@@ -113,5 +146,28 @@ func TestGmailConnectRequiresSetupTokenAndCreatesOAuthState(t *testing.T) {
 	var states int
 	if err := db.QueryRow("SELECT count(*) FROM gmail_oauth_states").Scan(&states); err != nil || states != 1 {
 		t.Fatalf("OAuth state was not stored: states=%d err=%v", states, err)
+	}
+}
+
+func TestGmailStatusRequiresSetupToken(t *testing.T) {
+	db, err := openDatabase(filepath.Join(t.TempDir(), "sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	setupToken := strings.Repeat("b", 32)
+	service, err := newGmailService(gmailConfig{db: db, clientID: "client-id", clientSecret: "client-secret", redirectURL: "https://sync.example.com/gmail/oauth/callback", setupToken: setupToken, label: "eeClass", sender: "eeclass@ncu.edu.tw", interval: "15m", notifications: newNotificationHub()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := httptest.NewRecorder()
+	service.status(denied, httptest.NewRequest(http.MethodGet, "/gmail/status", nil))
+	if denied.Code != http.StatusNotFound {
+		t.Fatalf("missing setup token returned %d", denied.Code)
+	}
+	allowed := httptest.NewRecorder()
+	service.status(allowed, httptest.NewRequest(http.MethodGet, "/gmail/status?token="+setupToken, nil))
+	if allowed.Code != http.StatusOK || !strings.Contains(allowed.Body.String(), "eeClass Gmail 匯入狀態") {
+		t.Fatalf("authorized status page unexpected: code=%d body=%s", allowed.Code, allowed.Body.String())
 	}
 }

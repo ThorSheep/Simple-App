@@ -267,6 +267,18 @@ func (g *gmailService) applyAssignment(ctx context.Context, assignment eeClassAs
 	if err != nil {
 		return false, err
 	}
+	if !found {
+		// The browser extension existed before the Gmail importer.  When it has
+		// already created the same assignment for the matched course, keep that
+		// entity ID instead of creating a visually identical second task.
+		matchedID, matchedItem, matchedRevision, matched, err := g.extensionItemForAssignment(ctx, assignment)
+		if err != nil {
+			return false, err
+		}
+		if matched {
+			id, existing, previousRevision, found = matchedID, matchedItem, matchedRevision, true
+		}
+	}
 	if deleted {
 		// Deleting an imported task is an explicit user decision. A later email
 		// notification must not silently recreate it.
@@ -340,6 +352,48 @@ func (g *gmailService) existingItem(ctx context.Context, id string) (serverAcade
 		return serverAcademicItem{}, "", false, false, err
 	}
 	return item, revision, false, true, nil
+}
+
+// extensionItemForAssignment finds an active task made by the eeClass browser
+// extension.  A course match is required so similarly named assignments from
+// different courses are never merged accidentally.
+func (g *gmailService) extensionItemForAssignment(ctx context.Context, assignment eeClassAssignment) (string, serverAcademicItem, string, bool, error) {
+	courseID := g.matchCourse(ctx, assignment.Course)
+	if courseID == nil {
+		return "", serverAcademicItem{}, "", false, nil
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT entity_id, payload, revision, deleted FROM changes WHERE entity_type = 'academicItem' ORDER BY seq DESC`)
+	if err != nil {
+		return "", serverAcademicItem{}, "", false, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var id, raw, revision string
+		var deleted int
+		if err := rows.Scan(&id, &raw, &revision, &deleted); err != nil {
+			return "", serverAcademicItem{}, "", false, err
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if deleted != 0 || !strings.HasPrefix(id, "eeclass-homework-") {
+			continue
+		}
+		var item serverAcademicItem
+		if err := json.Unmarshal([]byte(raw), &item); err != nil {
+			continue
+		}
+		if item.Done || item.CourseID == nil || *item.CourseID != *courseID || normalizeCourseTitle(item.Title) != normalizeCourseTitle(assignment.Title) {
+			continue
+		}
+		return id, item, revision, true, nil
+	}
+	if err := rows.Err(); err != nil {
+		return "", serverAcademicItem{}, "", false, err
+	}
+	return "", serverAcademicItem{}, "", false, nil
 }
 
 func (g *gmailService) matchCourse(ctx context.Context, emailCourse string) *string {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -85,6 +86,7 @@ func (g *gmailService) runLoop(ctx context.Context) {
 		g.importMessages(ctx)
 	} else {
 		log.Printf("eeClass Gmail importer is waiting for OAuth authorization")
+		g.importMessages(ctx)
 	}
 	ticker := time.NewTicker(g.interval)
 	defer ticker.Stop()
@@ -163,6 +165,75 @@ func secureEqual(left, right string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+}
+
+type gmailImportStatus struct {
+	StartedAt          int64
+	FinishedAt         int64
+	ListedMessages     int
+	NewMessages        int
+	AllowedMessages    int
+	RecognizedMessages int
+	ChangedItems       int
+	SkippedMessages    int
+	LastError          string
+}
+
+func (g *gmailService) authorizedSetup(r *http.Request) bool {
+	return secureEqual(r.URL.Query().Get("token"), g.setupToken)
+}
+
+// status is a small self-hosted operator page. It never shows email subjects,
+// bodies, or OAuth credentials.
+func (g *gmailService) status(w http.ResponseWriter, r *http.Request) {
+	if !g.authorizedSetup(r) {
+		writeError(w, http.StatusNotFound, "not_found")
+		return
+	}
+	state := g.loadStatus(r.Context())
+	connected := g.hasTokens(r.Context())
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	lastScan := "尚未完成掃描"
+	if state.FinishedAt > 0 {
+		lastScan = time.UnixMilli(state.FinishedAt).In(time.FixedZone("Asia/Taipei", 8*60*60)).Format("2006-01-02 15:04:05 MST")
+	}
+	errorText := "無"
+	if state.LastError != "" {
+		errorText = html.EscapeString(state.LastError)
+	}
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>eeClass Gmail 匯入狀態</title><body><h1>eeClass Gmail 匯入狀態</h1><p>OAuth 授權：%s</p><p>最後掃描：%s</p><ul><li>符合「eeClass」標籤與寄件者搜尋的信件：%d</li><li>本次新信：%d</li><li>通過寄件者驗證：%d</li><li>辨識為作業通知：%d</li><li>建立或更新待辦：%d</li><li>略過：%d</li></ul><p>最後錯誤：%s</p><form method="post" action="/gmail/rescan?token=%s"><button type="submit">重新掃描 eeClass 標籤</button></form><p>本頁不會顯示信件內容或 OAuth 憑證。</p></body></html>`, boolText(connected, "已連線", "尚未授權"), lastScan, state.ListedMessages, state.NewMessages, state.AllowedMessages, state.RecognizedMessages, state.ChangedItems, state.SkippedMessages, errorText, html.EscapeString(r.URL.Query().Get("token")))
+}
+
+func boolText(value bool, yes, no string) string {
+	if value {
+		return yes
+	}
+	return no
+}
+
+func (g *gmailService) rescan(w http.ResponseWriter, r *http.Request) {
+	if !g.authorizedSetup(r) {
+		writeError(w, http.StatusNotFound, "not_found")
+		return
+	}
+	if _, err := g.db.ExecContext(r.Context(), "DELETE FROM gmail_processed_messages"); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "database_unavailable")
+		return
+	}
+	go g.importMessages(context.Background())
+	http.Redirect(w, r, "/gmail/status?token="+url.QueryEscape(r.URL.Query().Get("token")), http.StatusSeeOther)
+}
+
+func (g *gmailService) loadStatus(ctx context.Context) gmailImportStatus {
+	var status gmailImportStatus
+	_ = g.db.QueryRowContext(ctx, `SELECT started_at, finished_at, listed_messages, new_messages, allowed_messages, recognized_messages, changed_items, skipped_messages, last_error FROM gmail_import_status WHERE id = 1`).Scan(
+		&status.StartedAt, &status.FinishedAt, &status.ListedMessages, &status.NewMessages, &status.AllowedMessages, &status.RecognizedMessages, &status.ChangedItems, &status.SkippedMessages, &status.LastError)
+	return status
+}
+
+func (g *gmailService) saveStatus(ctx context.Context, status gmailImportStatus) {
+	_, _ = g.db.ExecContext(ctx, `INSERT INTO gmail_import_status(id, started_at, finished_at, listed_messages, new_messages, allowed_messages, recognized_messages, changed_items, skipped_messages, last_error) VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET started_at = excluded.started_at, finished_at = excluded.finished_at, listed_messages = excluded.listed_messages, new_messages = excluded.new_messages, allowed_messages = excluded.allowed_messages, recognized_messages = excluded.recognized_messages, changed_items = excluded.changed_items, skipped_messages = excluded.skipped_messages, last_error = excluded.last_error`, status.StartedAt, status.FinishedAt, status.ListedMessages, status.NewMessages, status.AllowedMessages, status.RecognizedMessages, status.ChangedItems, status.SkippedMessages, status.LastError)
 }
 
 func (g *gmailService) consumeState(ctx context.Context, state string) bool {
@@ -289,19 +360,28 @@ type gmailMessage struct {
 func (g *gmailService) importMessages(ctx context.Context) {
 	g.importMu.Lock()
 	defer g.importMu.Unlock()
+	status := gmailImportStatus{StartedAt: g.now().UnixMilli()}
+	defer func() {
+		status.FinishedAt = g.now().UnixMilli()
+		g.saveStatus(ctx, status)
+	}()
 	if !g.hasTokens(ctx) {
+		status.LastError = "尚未完成 Gmail OAuth 授權"
 		return
 	}
 	labelID, err := g.labelID(ctx)
 	if err != nil {
+		status.LastError = "讀取 Gmail 標籤失敗：" + err.Error()
 		log.Printf("eeClass Gmail import skipped: %v", err)
 		return
 	}
 	ids, err := g.listMessageIDs(ctx, labelID)
 	if err != nil {
+		status.LastError = "列出 Gmail 信件失敗：" + err.Error()
 		log.Printf("eeClass Gmail import skipped: %v", err)
 		return
 	}
+	status.ListedMessages = len(ids)
 	messages := make([]gmailMessage, 0, len(ids))
 	for _, id := range ids {
 		if g.wasProcessed(ctx, id) {
@@ -309,33 +389,43 @@ func (g *gmailService) importMessages(ctx context.Context) {
 		}
 		message, err := g.message(ctx, id)
 		if err != nil {
+			status.LastError = "讀取一封 Gmail 信件失敗：" + err.Error()
 			log.Printf("eeClass Gmail message %s skipped: %v", id, err)
 			continue
 		}
 		messages = append(messages, message)
 	}
 	sort.Slice(messages, func(i, j int) bool { return gmailMessageTime(messages[i]) < gmailMessageTime(messages[j]) })
-	imported := 0
+	status.NewMessages = len(messages)
 	for _, message := range messages {
 		if !gmailFromMatches(gmailHeader(message.Payload, "From"), g.sender) {
+			status.SkippedMessages++
 			g.markProcessed(ctx, message.ID)
 			continue
 		}
+		status.AllowedMessages++
 		assignment, recognized := parseEEClassAssignment(gmailHeader(message.Payload, "Subject"), gmailPartText(message.Payload))
 		if recognized {
+			status.RecognizedMessages++
 			changed, err := g.applyAssignment(ctx, assignment)
 			if err != nil {
+				status.LastError = "寫入作業待辦失敗：" + err.Error()
+				status.SkippedMessages++
 				log.Printf("eeClass Gmail message %s could not be imported: %v", message.ID, err)
 				continue
 			}
 			if changed {
-				imported++
+				status.ChangedItems++
+			} else {
+				status.SkippedMessages++
 			}
+		} else {
+			status.SkippedMessages++
 		}
 		g.markProcessed(ctx, message.ID)
 	}
-	if imported > 0 {
-		log.Printf("eeClass Gmail importer wrote %d assignment change(s)", imported)
+	if status.NewMessages > 0 || status.ChangedItems > 0 || status.LastError != "" {
+		log.Printf("eeClass Gmail importer scan: label=%d new=%d allowed=%d recognized=%d changed=%d skipped=%d", status.ListedMessages, status.NewMessages, status.AllowedMessages, status.RecognizedMessages, status.ChangedItems, status.SkippedMessages)
 	}
 }
 

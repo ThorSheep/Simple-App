@@ -21,6 +21,8 @@ func (s *server) routes() http.Handler {
 	if s.gmail != nil && s.gmail.enabled() {
 		mux.HandleFunc("GET /gmail/connect", s.gmail.connect)
 		mux.HandleFunc("GET /gmail/oauth/callback", s.gmail.callback)
+		mux.HandleFunc("GET /gmail/status", s.gmail.status)
+		mux.HandleFunc("POST /gmail/rescan", s.gmail.rescan)
 	}
 	return limitBody(mux)
 }
