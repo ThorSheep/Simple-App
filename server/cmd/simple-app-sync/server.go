@@ -13,6 +13,7 @@ type server struct {
 	notifications *notificationHub
 	mcp           *mcpService
 	lineBot       *lineBotService
+	gmail         *gmailService
 }
 
 func main() {
@@ -38,6 +39,15 @@ func main() {
 		log.Fatal(err)
 	}
 	s.lineBot = lineBot
+	gmail, err := newGmailService(gmailConfig{
+		db: db, clientID: cfg.gmailClientID, clientSecret: cfg.gmailClientSecret, redirectURL: cfg.gmailRedirectURL,
+		setupToken: cfg.gmailSetupToken, label: cfg.gmailLabel, sender: cfg.gmailSender, interval: cfg.gmailCheckEvery,
+		notifications: s.notifications,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.gmail = gmail
 	reminders, err := newReminderService(db, reminderConfig{
 		accessToken: cfg.lineAccessToken,
 		userID:      cfg.lineUserID,
@@ -65,6 +75,12 @@ func main() {
 		log.Printf("LINE Personal Butler chat enabled at /line/webhook")
 	} else {
 		log.Printf("LINE Personal Butler chat disabled; set LINE_CHANNEL_SECRET to enable it")
+	}
+	if gmail.enabled() {
+		go gmail.runLoop(context.Background())
+		log.Printf("eeClass Gmail importer enabled; connect it through /gmail/connect")
+	} else {
+		log.Printf("eeClass Gmail importer disabled; configure GMAIL_OAUTH_CLIENT_ID and related settings to enable it")
 	}
 	log.Printf("Simple App sync server listening on %s", cfg.listenAddr)
 	log.Fatal(http.ListenAndServe(cfg.listenAddr, s.routes()))

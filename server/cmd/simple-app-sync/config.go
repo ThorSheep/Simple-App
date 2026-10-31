@@ -22,6 +22,13 @@ type config struct {
 	ollamaModel        string
 	openAIAPIKey       string
 	openAIModel        string
+	gmailClientID      string
+	gmailClientSecret  string
+	gmailRedirectURL   string
+	gmailSetupToken    string
+	gmailLabel         string
+	gmailSender        string
+	gmailCheckEvery    string
 }
 
 func loadConfig() config {
@@ -43,6 +50,13 @@ func loadConfig() config {
 		ollamaModel:        os.Getenv("OLLAMA_MODEL"),
 		openAIAPIKey:       os.Getenv("OPENAI_API_KEY"),
 		openAIModel:        os.Getenv("OPENAI_MODEL"),
+		gmailClientID:      os.Getenv("GMAIL_OAUTH_CLIENT_ID"),
+		gmailClientSecret:  os.Getenv("GMAIL_OAUTH_CLIENT_SECRET"),
+		gmailRedirectURL:   os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		gmailSetupToken:    os.Getenv("GMAIL_OAUTH_SETUP_TOKEN"),
+		gmailLabel:         value("GMAIL_LABEL", "eeClass"),
+		gmailSender:        value("GMAIL_SENDER", "eeclass@ncu.edu.tw"),
+		gmailCheckEvery:    value("GMAIL_CHECK_INTERVAL", "15m"),
 	}
 }
 

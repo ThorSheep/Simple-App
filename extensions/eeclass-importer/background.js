@@ -122,8 +122,8 @@ async function restoreAssignment(key) {
   await setStore({ [IGNORED_KEY]: ignored });
 }
 
-function importOperation(config, assignment, courseId) {
-  const itemId = `eeclass-homework-${assignment.id}`;
+function importOperation(config, assignment, courseId, existingItemId = null) {
+  const itemId = existingItemId || `eeclass-homework-${assignment.id}`;
   const payload = {
     id: itemId,
     title: assignment.title,
@@ -145,6 +145,18 @@ function importOperation(config, assignment, courseId) {
   };
 }
 
+function matchingGmailItems(existing, courseId) {
+  const result = new Map();
+  for (const change of existing.values()) {
+    if (change.deleted || !String(change.entityId).startsWith("eeclass-email-")) continue;
+    try {
+      const item = typeof change.payload === "string" ? JSON.parse(change.payload) : change.payload;
+      if (item?.courseId === courseId && item.title) result.set(String(item.title).trim().toLocaleLowerCase("zh-Hant"), change.entityId);
+    } catch { /* Ignore malformed historic sync data. */ }
+  }
+  return result;
+}
+
 async function importAssignments(assignments, courseId) {
   const config = await requireConfig();
   if (!Array.isArray(assignments) || assignments.length === 0) throw new Error("請先選擇至少一筆作業");
@@ -153,9 +165,11 @@ async function importAssignments(assignments, courseId) {
   const existingIds = new Set([...existing.values()]
     .filter((change) => !change.deleted && change.entityId.startsWith("eeclass-homework-"))
     .map((change) => change.entityId));
-  const response = await sync(config, assignments.map((assignment) => importOperation(config, assignment, courseId)));
+  const gmailItems = matchingGmailItems(existing, courseId);
+  const targets = assignments.map((assignment) => gmailItems.get(String(assignment.title).trim().toLocaleLowerCase("zh-Hant")) || `eeclass-homework-${assignment.id}`);
+  const response = await sync(config, assignments.map((assignment, index) => importOperation(config, assignment, courseId, targets[index])));
   const accepted = response.acceptedOperationIds?.length || 0;
-  const updated = assignments.filter((assignment) => existingIds.has(`eeclass-homework-${assignment.id}`)).length;
+  const updated = assignments.filter((assignment, index) => existingIds.has(`eeclass-homework-${assignment.id}`) || targets[index].startsWith("eeclass-email-")).length;
   return { created: Math.max(0, accepted - updated), updated };
 }
 
