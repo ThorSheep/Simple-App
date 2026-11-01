@@ -139,6 +139,13 @@ func TestGmailImporterUpdatesMatchingExtensionTaskInsteadOfDuplicatingIt(t *test
 	if err != nil || !item.Done {
 		t.Fatalf("matching extension task should be completed: %#v err=%v", item, err)
 	}
+	changed, err = service.applyAssignment(context.Background(), assignment)
+	if err != nil || changed {
+		t.Fatalf("deadline reminder must not duplicate a completed matching task: changed=%v err=%v", changed, err)
+	}
+	if _, _, _, gmailFound, err := service.existingItem(context.Background(), eeClassItemID(assignment.Course, assignment.Title)); err != nil || gmailFound {
+		t.Fatalf("completed extension task must not create a Gmail duplicate: found=%v err=%v", gmailFound, err)
+	}
 }
 
 func TestNormalizeAssignmentTitleKeepsWeekVariantsEquivalent(t *testing.T) {

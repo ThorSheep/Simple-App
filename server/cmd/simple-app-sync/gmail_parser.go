@@ -328,8 +328,14 @@ func (g *gmailService) applyAssignment(ctx context.Context, assignment eeClassAs
 		item.GroupNote = existing.GroupNote
 		item.Done = existing.Done
 		item.CourseID = existing.CourseID
-		if !strings.HasPrefix(existing.Note, "從中央 ee-class 電子郵件匯入") && existing.Note != "" {
-			item.Note += "\n\n使用者備註：\n" + existing.Note
+		if existing.Note != "" {
+			if strings.HasPrefix(existing.Note, "從中央 ee-class 電子郵件匯入") {
+				// Repeated reminders must preserve the original import note and any
+				// attached user note instead of rewriting the same completed task.
+				item.Note = existing.Note
+			} else {
+				item.Note += "\n\n使用者備註：\n" + existing.Note
+			}
 		}
 	}
 	if item.CourseID == nil {
@@ -411,7 +417,10 @@ func (g *gmailService) importedItemForAssignment(ctx context.Context, assignment
 		if err := json.Unmarshal([]byte(raw), &item); err != nil {
 			continue
 		}
-		if (!includeDone && item.Done) || item.CourseID == nil || *item.CourseID != *courseID || normalizeAssignmentTitle(item.Title) != normalizeAssignmentTitle(assignment.Title) {
+		// A later deadline reminder for the same assignment must keep a task the
+		// user already completed. Only a different due date is treated as a
+		// possible new-term assignment with the same title.
+		if (!includeDone && item.Done && item.Date != assignment.Date) || item.CourseID == nil || *item.CourseID != *courseID || normalizeAssignmentTitle(item.Title) != normalizeAssignmentTitle(assignment.Title) {
 			continue
 		}
 		return id, item, revision, true, nil
