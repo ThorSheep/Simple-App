@@ -108,7 +108,10 @@ func decodeGmailBody(raw string) string {
 	return string(decoded)
 }
 
-var htmlBreaks = regexp.MustCompile(`(?is)<(?:br\s*/?|/p|/div|/li|/tr|/h[1-6])\s*>`)
+// ee-class completion notices are often HTML tables.  Preserve table-cell
+// boundaries before stripping tags so labels such as "課程" and "作業" remain
+// separate lines for the parser.
+var htmlBreaks = regexp.MustCompile(`(?is)<(?:br\s*/?|/?(?:p|div|li|tr|td|th|h[1-6]))\s*>`)
 var htmlTags = regexp.MustCompile(`(?is)<[^>]+>`)
 
 func plainHTML(raw string) string {
