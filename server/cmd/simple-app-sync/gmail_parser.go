@@ -85,13 +85,17 @@ func gmailPartText(part gmailPart) string {
 		}
 	}
 	walk(part)
+	// Some ee-class messages include a short text/plain fallback plus the real
+	// course and assignment fields only in text/html. Keep both alternatives so
+	// a non-empty but incomplete plain part cannot hide the HTML table.
+	parts := make([]string, 0, 2)
 	if plain != "" {
-		return plain
+		parts = append(parts, plain)
 	}
-	if htmlText == "" {
-		return ""
+	if htmlText != "" {
+		parts = append(parts, plainHTML(htmlText))
 	}
-	return plainHTML(htmlText)
+	return strings.Join(parts, "\n")
 }
 
 func decodeGmailBody(raw string) string {
@@ -108,7 +112,10 @@ func decodeGmailBody(raw string) string {
 	return string(decoded)
 }
 
-var htmlBreaks = regexp.MustCompile(`(?is)<(?:br\s*/?|/p|/div|/li|/tr|/h[1-6])\s*>`)
+// ee-class completion notices are often HTML tables.  Preserve table-cell
+// boundaries before stripping tags so labels such as "課程" and "作業" remain
+// separate lines for the parser.
+var htmlBreaks = regexp.MustCompile(`(?is)<(?:br\s*/?|/?(?:p|div|li|tr|td|th|h[1-6]))\s*>`)
 var htmlTags = regexp.MustCompile(`(?is)<[^>]+>`)
 
 func plainHTML(raw string) string {
@@ -321,8 +328,14 @@ func (g *gmailService) applyAssignment(ctx context.Context, assignment eeClassAs
 		item.GroupNote = existing.GroupNote
 		item.Done = existing.Done
 		item.CourseID = existing.CourseID
-		if !strings.HasPrefix(existing.Note, "從中央 ee-class 電子郵件匯入") && existing.Note != "" {
-			item.Note += "\n\n使用者備註：\n" + existing.Note
+		if existing.Note != "" {
+			if strings.HasPrefix(existing.Note, "從中央 ee-class 電子郵件匯入") {
+				// Repeated reminders must preserve the original import note and any
+				// attached user note instead of rewriting the same completed task.
+				item.Note = existing.Note
+			} else {
+				item.Note += "\n\n使用者備註：\n" + existing.Note
+			}
 		}
 	}
 	if item.CourseID == nil {
@@ -404,7 +417,10 @@ func (g *gmailService) importedItemForAssignment(ctx context.Context, assignment
 		if err := json.Unmarshal([]byte(raw), &item); err != nil {
 			continue
 		}
-		if (!includeDone && item.Done) || item.CourseID == nil || *item.CourseID != *courseID || normalizeAssignmentTitle(item.Title) != normalizeAssignmentTitle(assignment.Title) {
+		// A later deadline reminder for the same assignment must keep a task the
+		// user already completed. Only a different due date is treated as a
+		// possible new-term assignment with the same title.
+		if (!includeDone && item.Done && item.Date != assignment.Date) || item.CourseID == nil || *item.CourseID != *courseID || normalizeAssignmentTitle(item.Title) != normalizeAssignmentTitle(assignment.Title) {
 			continue
 		}
 		return id, item, revision, true, nil

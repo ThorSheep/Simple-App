@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -42,6 +43,32 @@ Week7 作業繳交區
 `)
 	if !recognized || !submitted.Submitted || submitted.Course != "軟體工程 Software Engineering" || submitted.Title != "Week7 作業繳交區" {
 		t.Fatalf("submission notification was parsed incorrectly: %#v", submitted)
+	}
+}
+
+func TestParseEEClassCompletionNotificationFromHTMLTable(t *testing.T) {
+	html := `<table><tr><td>課程</td><td>科技輔助研究方法與研究程式開發 Technology-Assisted Research Methods and Research Programming Development</td></tr><tr><td>作業</td><td>hw2</td></tr></table>`
+	part := gmailPart{MimeType: "multipart/alternative"}
+	part.Parts = []gmailPart{{MimeType: "text/html"}}
+	part.Parts[0].Body.Data = base64.RawURLEncoding.EncodeToString([]byte(html))
+	assignment, recognized := parseEEClassAssignment("[作業繳交] 繳交完成通知 (hw2)", gmailPartText(part))
+	if !recognized || !assignment.Submitted || assignment.Course != "科技輔助研究方法與研究程式開發 Technology-Assisted Research Methods and Research Programming Development" || assignment.Title != "hw2" {
+		t.Fatalf("HTML completion notification was parsed incorrectly: %#v", assignment)
+	}
+}
+
+func TestCompletionParserKeepsHTMLWhenPlainAlternativeIsIncomplete(t *testing.T) {
+	html := `<table><tr><td>課程</td><td>科技輔助研究方法與研究程式開發 Technology-Assisted Research Methods and Research Programming Development</td></tr><tr><td>作業</td><td>hw2</td></tr></table>`
+	part := gmailPart{MimeType: "multipart/alternative"}
+	part.Parts = []gmailPart{
+		{MimeType: "text/plain"},
+		{MimeType: "text/html"},
+	}
+	part.Parts[0].Body.Data = base64.RawURLEncoding.EncodeToString([]byte("這是一封系統通知，請查看網頁。"))
+	part.Parts[1].Body.Data = base64.RawURLEncoding.EncodeToString([]byte(html))
+	assignment, recognized := parseEEClassAssignment("[作業繳交] 繳交完成通知 (hw2)", gmailPartText(part))
+	if !recognized || !assignment.Submitted || assignment.Course == "" || assignment.Title != "hw2" {
+		t.Fatalf("HTML fields should remain available with a plain fallback: %#v", assignment)
 	}
 }
 
@@ -111,6 +138,13 @@ func TestGmailImporterUpdatesMatchingExtensionTaskInsteadOfDuplicatingIt(t *test
 	item, _, _, _, err = service.existingItem(context.Background(), extensionID)
 	if err != nil || !item.Done {
 		t.Fatalf("matching extension task should be completed: %#v err=%v", item, err)
+	}
+	changed, err = service.applyAssignment(context.Background(), assignment)
+	if err != nil || changed {
+		t.Fatalf("deadline reminder must not duplicate a completed matching task: changed=%v err=%v", changed, err)
+	}
+	if _, _, _, gmailFound, err := service.existingItem(context.Background(), eeClassItemID(assignment.Course, assignment.Title)); err != nil || gmailFound {
+		t.Fatalf("completed extension task must not create a Gmail duplicate: found=%v err=%v", gmailFound, err)
 	}
 }
 
