@@ -15,6 +15,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+internal fun subscriptionIdsForSource(sourceId: String, subscribed: List<String>): List<String> =
+    subscribed.filter { it == sourceId || it.startsWith("${sourceId}#") }
+
 @Composable fun NewsPage(sources: List<AnnouncementSource>, rows: List<Announcement>, subscribed: List<String>, keywords: List<AnnouncementKeyword>,
     options: AppOptions, toggle: (String, Boolean) -> Unit, clear: (AnnouncementSource) -> Unit, refresh: (List<AnnouncementSource>) -> Unit, open: (Announcement) -> Unit,
     saveOptions: (AppOptions) -> Unit, setNotify: (Boolean) -> Unit, saveKeyword: (AnnouncementKeyword) -> Unit, deleteKeyword: (AnnouncementKeyword) -> Unit) {
@@ -25,7 +28,7 @@ import java.time.format.DateTimeFormatter
     val state = remember { context.getSharedPreferences("announcement-state", 0) }
     var revision by remember { mutableIntStateOf(0) }
     DisposableEffect(state) { val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> revision++ }; state.registerOnSharedPreferenceChangeListener(listener); onDispose { state.unregisterOnSharedPreferenceChangeListener(listener) } }
-    val selected = sources.filter { source -> source.id in subscribed || subscribed.any { it.startsWith("${source.id}#") } }
+    val selected = sources.filter { source -> subscriptionIdsForSource(source.id, subscribed).isNotEmpty() }
     PageList {
         item { SectionTitle("校園公告"); CategoryTabs(section, listOf("content" to "公告內容", "subscriptions" to "訂閱管理", "settings" to "設定")) { section = it } }
         when (section) {
