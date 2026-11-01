@@ -57,6 +57,21 @@ func TestParseEEClassCompletionNotificationFromHTMLTable(t *testing.T) {
 	}
 }
 
+func TestCompletionParserKeepsHTMLWhenPlainAlternativeIsIncomplete(t *testing.T) {
+	html := `<table><tr><td>課程</td><td>科技輔助研究方法與研究程式開發 Technology-Assisted Research Methods and Research Programming Development</td></tr><tr><td>作業</td><td>hw2</td></tr></table>`
+	part := gmailPart{MimeType: "multipart/alternative"}
+	part.Parts = []gmailPart{
+		{MimeType: "text/plain"},
+		{MimeType: "text/html"},
+	}
+	part.Parts[0].Body.Data = base64.RawURLEncoding.EncodeToString([]byte("這是一封系統通知，請查看網頁。"))
+	part.Parts[1].Body.Data = base64.RawURLEncoding.EncodeToString([]byte(html))
+	assignment, recognized := parseEEClassAssignment("[作業繳交] 繳交完成通知 (hw2)", gmailPartText(part))
+	if !recognized || !assignment.Submitted || assignment.Course == "" || assignment.Title != "hw2" {
+		t.Fatalf("HTML fields should remain available with a plain fallback: %#v", assignment)
+	}
+}
+
 func TestGmailImporterCreatesImportantTaskAndMarksSubmissionDone(t *testing.T) {
 	db, err := openDatabase(filepath.Join(t.TempDir(), "sync.db"))
 	if err != nil {

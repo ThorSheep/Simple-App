@@ -85,13 +85,17 @@ func gmailPartText(part gmailPart) string {
 		}
 	}
 	walk(part)
+	// Some ee-class messages include a short text/plain fallback plus the real
+	// course and assignment fields only in text/html. Keep both alternatives so
+	// a non-empty but incomplete plain part cannot hide the HTML table.
+	parts := make([]string, 0, 2)
 	if plain != "" {
-		return plain
+		parts = append(parts, plain)
 	}
-	if htmlText == "" {
-		return ""
+	if htmlText != "" {
+		parts = append(parts, plainHTML(htmlText))
 	}
-	return plainHTML(htmlText)
+	return strings.Join(parts, "\n")
 }
 
 func decodeGmailBody(raw string) string {
