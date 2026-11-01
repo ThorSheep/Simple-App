@@ -200,6 +200,7 @@ var finalParentheses = regexp.MustCompile(`\(([^()]+)\)\s*$`)
 var dateTimePattern = regexp.MustCompile(`(\d{4}-\d{2}-\d{2})\s*(?:\(?\s*(\d{1,2}:\d{2})\s*\)?)?`)
 var eeClassReminderDeadline = regexp.MustCompile(`請於\s*(\d{4}-\d{2}-\d{2})\s*\(?\s*(\d{1,2}:\d{2})\s*\)?`)
 var linkPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
+var weekNumberPattern = regexp.MustCompile(`(?i)\bweek\s*0*(\d+)\b`)
 
 func quotedAssignment(subject string) string {
 	if found := quotedSubject.FindStringSubmatch(subject); len(found) == 2 {
@@ -243,8 +244,26 @@ func firstURL(body string) string {
 }
 
 func eeClassItemID(course, title string) string {
-	sum := sha256.Sum256([]byte(normalizeCourseTitle(course) + "\x00" + normalizeCourseTitle(title)))
+	sum := sha256.Sum256([]byte(normalizeCourseTitle(course) + "\x00" + normalizeAssignmentTitle(title)))
 	return "eeclass-email-" + hex.EncodeToString(sum[:])
+}
+
+// normalizeAssignmentTitle keeps matching strict enough for a single course,
+// but treats ee-class's inconsistent Week 7 / Week07 / Week 07 spelling as
+// one assignment name.
+func normalizeAssignmentTitle(value string) string {
+	value = weekNumberPattern.ReplaceAllStringFunc(value, func(match string) string {
+		parts := weekNumberPattern.FindStringSubmatch(match)
+		if len(parts) != 2 {
+			return match
+		}
+		number, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return match
+		}
+		return "week" + strconv.Itoa(number)
+	})
+	return normalizeCourseTitle(value)
 }
 
 func normalizeCourseTitle(value string) string {
@@ -271,7 +290,7 @@ func (g *gmailService) applyAssignment(ctx context.Context, assignment eeClassAs
 		// The browser extension existed before the Gmail importer.  When it has
 		// already created the same assignment for the matched course, keep that
 		// entity ID instead of creating a visually identical second task.
-		matchedID, matchedItem, matchedRevision, matched, err := g.extensionItemForAssignment(ctx, assignment)
+		matchedID, matchedItem, matchedRevision, matched, err := g.importedItemForAssignment(ctx, assignment, assignment.Submitted)
 		if err != nil {
 			return false, err
 		}
@@ -354,10 +373,10 @@ func (g *gmailService) existingItem(ctx context.Context, id string) (serverAcade
 	return item, revision, false, true, nil
 }
 
-// extensionItemForAssignment finds an active task made by the eeClass browser
-// extension.  A course match is required so similarly named assignments from
-// different courses are never merged accidentally.
-func (g *gmailService) extensionItemForAssignment(ctx context.Context, assignment eeClassAssignment) (string, serverAcademicItem, string, bool, error) {
+// importedItemForAssignment finds an active task made by either eeClass import
+// path. A matched App course and normalized assignment title are both required,
+// so same-named work in different courses is never merged accidentally.
+func (g *gmailService) importedItemForAssignment(ctx context.Context, assignment eeClassAssignment, includeDone bool) (string, serverAcademicItem, string, bool, error) {
 	courseID := g.matchCourse(ctx, assignment.Course)
 	if courseID == nil {
 		return "", serverAcademicItem{}, "", false, nil
@@ -378,14 +397,14 @@ func (g *gmailService) extensionItemForAssignment(ctx context.Context, assignmen
 			continue
 		}
 		seen[id] = true
-		if deleted != 0 || !strings.HasPrefix(id, "eeclass-homework-") {
+		if deleted != 0 || (!strings.HasPrefix(id, "eeclass-homework-") && !strings.HasPrefix(id, "eeclass-email-")) {
 			continue
 		}
 		var item serverAcademicItem
 		if err := json.Unmarshal([]byte(raw), &item); err != nil {
 			continue
 		}
-		if item.Done || item.CourseID == nil || *item.CourseID != *courseID || normalizeCourseTitle(item.Title) != normalizeCourseTitle(assignment.Title) {
+		if (!includeDone && item.Done) || item.CourseID == nil || *item.CourseID != *courseID || normalizeAssignmentTitle(item.Title) != normalizeAssignmentTitle(assignment.Title) {
 			continue
 		}
 		return id, item, revision, true, nil
