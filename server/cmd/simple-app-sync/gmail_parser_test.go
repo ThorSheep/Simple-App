@@ -92,7 +92,7 @@ func TestGmailImporterUpdatesMatchingExtensionTaskInsteadOfDuplicatingIt(t *test
 	if _, err := db.Exec(`INSERT INTO changes(operation_id, entity_type, entity_id, revision, device_id, deleted, payload, created_at) VALUES('item-op', 'academicItem', ?, 'extension:2', 'extension', 0, ?, ?)`, extensionID, extensionPayload, now.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	assignment := eeClassAssignment{Course: "學習、合作與創造 Learning Collaboration and Creativity", Title: "Week 09 作業繳交區", Date: "2026-11-01", Time: "22:00"}
+	assignment := eeClassAssignment{Course: "學習、合作與創造 Learning Collaboration and Creativity", Title: "Week9 作業繳交區", Date: "2026-11-01", Time: "22:00"}
 	changed, err := service.applyAssignment(context.Background(), assignment)
 	if err != nil || !changed {
 		t.Fatalf("Gmail assignment should update extension task: changed=%v err=%v", changed, err)
@@ -103,6 +103,23 @@ func TestGmailImporterUpdatesMatchingExtensionTaskInsteadOfDuplicatingIt(t *test
 	}
 	if _, _, _, gmailFound, err := service.existingItem(context.Background(), eeClassItemID(assignment.Course, assignment.Title)); err != nil || gmailFound {
 		t.Fatalf("Gmail importer created a duplicate task: found=%v err=%v", gmailFound, err)
+	}
+	changed, err = service.applyAssignment(context.Background(), eeClassAssignment{Course: assignment.Course, Title: "Week 09 作業繳交區", Submitted: true})
+	if err != nil || !changed {
+		t.Fatalf("submission should match the same course and normalized title: changed=%v err=%v", changed, err)
+	}
+	item, _, _, _, err = service.existingItem(context.Background(), extensionID)
+	if err != nil || !item.Done {
+		t.Fatalf("matching extension task should be completed: %#v err=%v", item, err)
+	}
+}
+
+func TestNormalizeAssignmentTitleKeepsWeekVariantsEquivalent(t *testing.T) {
+	base := normalizeAssignmentTitle("Week 7 作業繳交區")
+	for _, value := range []string{"Week7 作業繳交區", "Week 07 作業繳交區", "WEEK 007 作業繳交區"} {
+		if normalized := normalizeAssignmentTitle(value); normalized != base {
+			t.Fatalf("week format should match: %q became %q, expected %q", value, normalized, base)
+		}
 	}
 }
 
